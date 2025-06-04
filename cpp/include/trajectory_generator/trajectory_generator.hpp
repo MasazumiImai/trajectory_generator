@@ -27,15 +27,6 @@
 namespace trajectory_generator
 {
 
-// struct BoundaryCondition
-// {
-//   double time;
-//   std::optional<Eigen::Vector3d> position;
-//   std::optional<Eigen::Vector3d> orientation;
-//   std::optional<Eigen::Vector3d> twist;
-//   std::optional<Eigen::Vector3d> accel;
-// };
-
 struct LinearStateConstraint
 {
   double time;  // [s]
