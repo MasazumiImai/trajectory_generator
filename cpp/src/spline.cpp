@@ -12,24 +12,24 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "trajectory_generator/spline_trajectory.hpp"
+#include "trajectory_generator/spline.hpp"
 
 #define DEBUG_ENABLED false
 
 namespace trajectory_generator
 {
 
-SplineTrajectory::SplineTrajectory()
+Spline::Spline()
 {
-  std::cout << "SplineTrajectory class is established." << std::endl;
+  std::cout << "Spline class is established." << std::endl;
 }
 
-SplineTrajectory::~SplineTrajectory()
+Spline::~Spline()
 {
-  std::cout << "SplineTrajectory class is destructed." << std::endl;
+  std::cout << "Spline class is destructed." << std::endl;
 }
 
-Eigen::MatrixXd SplineTrajectory::calculateCoefficients(
+Eigen::MatrixXd Spline::calculateCoefficients(
   const std::map<double, std::map<std::string, Eigen::Vector3d, std::greater<>>> & constraints_map)
 {
   const Eigen::MatrixXd X = getSplineValueVector(constraints_map);
@@ -41,7 +41,7 @@ Eigen::MatrixXd SplineTrajectory::calculateCoefficients(
   return coefficients;  // num_constraints x 3
 }
 
-Eigen::Vector3d SplineTrajectory::calculatePositionAtCertainTime(
+Eigen::Vector3d Spline::calculatePositionAtCertainTime(
   const double & time, const Eigen::MatrixXd & coefficients)
 {
   const int num_coeff = coefficients.rows();
@@ -62,7 +62,7 @@ Eigen::Vector3d SplineTrajectory::calculatePositionAtCertainTime(
   return position;
 }
 
-Eigen::Quaterniond SplineTrajectory::calculateOrientationAtCertainTime(
+Eigen::Quaterniond Spline::calculateOrientationAtCertainTime(
   const double & time, const Eigen::MatrixXd & coefficients)
 {
   const int num_coeff = coefficients.rows();
@@ -85,7 +85,7 @@ Eigen::Quaterniond SplineTrajectory::calculateOrientationAtCertainTime(
   return quaternion;
 }
 
-Eigen::Matrix3Xd SplineTrajectory::calculateTrajectory(
+Eigen::Matrix3Xd Spline::calculateTrajectory(
   const std::vector<LinearStateConstraint> & constraints, const int & step_time)
 {
   auto constraints_map = TrajectoryGenerator::getConstraintsMap(constraints);
@@ -125,7 +125,7 @@ Eigen::Matrix3Xd SplineTrajectory::calculateTrajectory(
   return trajectory;
 }
 
-Eigen::Matrix4Xd SplineTrajectory::calculateTrajectory(
+Eigen::Matrix4Xd Spline::calculateTrajectory(
   const std::vector<AngularStateConstraint> & constraints, const int & step_time)
 {
   auto constraints_map = TrajectoryGenerator::getConstraintsMap(constraints);
@@ -168,7 +168,7 @@ Eigen::Matrix4Xd SplineTrajectory::calculateTrajectory(
   return trajectory;
 }
 
-Eigen::Matrix3Xd SplineTrajectory::calculateVelocityTrajectory(
+Eigen::Matrix3Xd Spline::calculateVelocityTrajectory(
   const std::vector<LinearStateConstraint> & constraints, const int & step_time)
 {
   auto constraints_map = TrajectoryGenerator::getConstraintsMap(constraints);
@@ -212,7 +212,7 @@ Eigen::Matrix3Xd SplineTrajectory::calculateVelocityTrajectory(
   return trajectory;
 }
 
-Eigen::Matrix3Xd SplineTrajectory::calculateVelocityTrajectory(
+Eigen::Matrix3Xd Spline::calculateVelocityTrajectory(
   const std::vector<AngularStateConstraint> & constraints, const int & step_time)
 {
   auto constraints_map = TrajectoryGenerator::getConstraintsMap(constraints);
@@ -256,7 +256,7 @@ Eigen::Matrix3Xd SplineTrajectory::calculateVelocityTrajectory(
   return trajectory;
 }
 
-Eigen::MatrixXd SplineTrajectory::getSplineValueVector(
+Eigen::MatrixXd Spline::getSplineValueVector(
   const std::map<double, std::map<std::string, Eigen::Vector3d, std::greater<>>> & constraints_map)
 {
   const int num_constraints = TrajectoryGenerator::getNumberOfConstraints(constraints_map);
@@ -274,7 +274,7 @@ Eigen::MatrixXd SplineTrajectory::getSplineValueVector(
   return spline_value_matrix;  // num_constraints x 3
 }
 
-Eigen::MatrixXd SplineTrajectory::getBasisMatrix(
+Eigen::MatrixXd Spline::getBasisMatrix(
   const std::map<double, std::map<std::string, Eigen::Vector3d, std::greater<>>> & constraints_map)
 {
   const int num_constraints = TrajectoryGenerator::getNumberOfConstraints(constraints_map);

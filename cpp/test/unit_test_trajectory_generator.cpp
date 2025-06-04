@@ -14,7 +14,7 @@
 
 #include <gtest/gtest.h>
 
-#include "trajectory_generator/spline_trajectory.hpp"
+#include "trajectory_generator/spline.hpp"
 #include "trajectory_generator/trajectory_generator.hpp"
 
 namespace trajectory_generator
@@ -28,27 +28,25 @@ TEST(TrajectoryGenerator, splineCoefficientsTestCase)
   Eigen::Vector3d kStartPosition(0.0, 0.0, 0.0);  // [m]
   Eigen::Vector3d kStartLinearVelocity(-0.5, 0.0, 0.5);  // [m/s]
   Eigen::Vector3d kStartLinearAcceleration(0.0, 0.0, 0.0);  // [m/s^2]
+  int kFinalTime = 1000;  // [ms]
+  Eigen::Vector3d kFinalLinearPosition(1.0, 0.0, 0.0);
+  Eigen::Vector3d kFinalLinearVelocity(-0.5, 0.0, -0.5);
+  Eigen::Vector3d kFinalLinearAcceleration(0.0, 0.0, 0.0);
 
-  auto constraints = TrajectoryGenerator::createConstraint(
-    kStartTime, kStartPosition, kStartLinearVelocity, kStartLinearAcceleration);
+  auto constraints = TrajectoryGenerator::addBoundaryConditions(
+    kStartTime, kStartPosition, kStartLinearVelocity, kStartLinearAcceleration, kFinalTime,
+    kFinalLinearPosition, kFinalLinearVelocity, kFinalLinearAcceleration);
 
   int kMidTime = 500;  // [ms]
   Eigen::Vector3d kMidLinearPosition(0.5, 0.0, 0.5);
   Eigen::Vector3d kMidLinearVelocity(0.5, 0.0, 0.5);
   TrajectoryGenerator::addConstraint(constraints, kMidTime, kMidLinearPosition, kMidLinearVelocity);
 
-  int kFinalTime = 1000;  // [ms]
-  Eigen::Vector3d kFinalLinearPosition(1.0, 0.0, 0.0);
-  Eigen::Vector3d kFinalLinearVelocity(-0.5, 0.0, -0.5);
-  Eigen::Vector3d kFinalLinearAcceleration(0.0, 0.0, 0.0);
-  TrajectoryGenerator::addConstraint(
-    constraints, kFinalTime, kFinalLinearPosition, kFinalLinearVelocity, kFinalLinearAcceleration);
-
   auto constraints_map = TrajectoryGenerator::getConstraintsMap(constraints);
 
   // Position trajectory
   const int kStepTime = 100;  // [ms]
-  const Eigen::Matrix3Xd trajectory = SplineTrajectory::calculateTrajectory(constraints, kStepTime);
+  const Eigen::Matrix3Xd trajectory = Spline::calculateTrajectory(constraints, kStepTime);
   std::cout << "trajectory = " << std::endl << trajectory.transpose() << std::endl;
 
   // Check results
@@ -62,7 +60,7 @@ TEST(TrajectoryGenerator, splineCoefficientsTestCase)
 
   // Linear velocity trajectory
   const Eigen::Matrix3Xd velocity_trajectory =
-    SplineTrajectory::calculateVelocityTrajectory(constraints, kStepTime);
+    Spline::calculateVelocityTrajectory(constraints, kStepTime);
   std::cout << "velocity_trajectory = " << std::endl
             << velocity_trajectory.transpose() << std::endl;
 
@@ -79,9 +77,6 @@ TEST(TrajectoryGenerator, splineCoefficientsTestCase)
   Eigen::Vector3d kStartAngularVelocity(0.0, 0.0, 0.0);  // [m/s]
   Eigen::Vector3d kStartAngularAcceleration(0.0, 0.0, 0.0);  // [m/s^2]
 
-  auto angular_constraints = TrajectoryGenerator::createConstraint(
-    kStartTime, kStartOrientation, kStartAngularVelocity, kStartAngularAcceleration);
-
   Eigen::Vector3d kFinalOrientationRPY(0.0, 0.0, M_PI);
   Eigen::Matrix3d kFinalRotationMatrix;
   kFinalRotationMatrix = Eigen::AngleAxisd(
@@ -94,13 +89,13 @@ TEST(TrajectoryGenerator, splineCoefficientsTestCase)
   Eigen::Vector3d kFinalAngularVelocity(0.0, 0.0, 0.0);
   Eigen::Vector3d kFinalAngularAcceleration(0.0, 0.0, 0.0);
 
-  TrajectoryGenerator::addConstraint(
-    angular_constraints, kFinalTime, kFinalOrientation, kFinalAngularVelocity,
-    kFinalAngularAcceleration);
+  auto angular_constraints = TrajectoryGenerator::addBoundaryConditions(
+    kStartTime, kStartOrientation, kStartAngularVelocity, kStartAngularAcceleration, kFinalTime,
+    kFinalOrientation, kFinalAngularVelocity, kFinalAngularAcceleration);
 
   // Orientation trajectory
   const Eigen::Matrix4Xd angular_trajectory =
-    SplineTrajectory::calculateTrajectory(angular_constraints, kStepTime);
+    Spline::calculateTrajectory(angular_constraints, kStepTime);
   std::cout << "angular_trajectory = " << std::endl << angular_trajectory.transpose() << std::endl;
 
   // Check results
@@ -123,7 +118,7 @@ TEST(TrajectoryGenerator, splineCoefficientsTestCase)
 
   // Angular velocity trajectory
   const Eigen::Matrix3Xd angular_velocity_trajectory =
-    SplineTrajectory::calculateVelocityTrajectory(angular_constraints, kStepTime);
+    Spline::calculateVelocityTrajectory(angular_constraints, kStepTime);
   std::cout << "angular_velocity_trajectory = " << std::endl
             << angular_velocity_trajectory.transpose() << std::endl;
 }

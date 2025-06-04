@@ -27,15 +27,6 @@
 namespace trajectory_generator
 {
 
-// struct BoundaryCondition
-// {
-//   double time;
-//   std::optional<Eigen::Vector3d> position;
-//   std::optional<Eigen::Vector3d> orientation;
-//   std::optional<Eigen::Vector3d> twist;
-//   std::optional<Eigen::Vector3d> accel;
-// };
-
 struct LinearStateConstraint
 {
   double time;  // [s]
@@ -61,6 +52,36 @@ public:
   virtual ~TrajectoryGenerator();
 
   /**
+   * @brief Create constraints with boundary conditions
+   *
+   * @param start_time  // [ms]
+   * @param start_position  // [m]
+   * @param start_linear_velocity  // [m/s]
+   * @param start_linear_acceleration  // [m/s^2]
+   * @param final_time  // [ms]
+   * @param final_position  // [m]
+   * @param final_linear_velocity  // [m/s]
+   * @param final_linear_acceleration  // [m/s^2]
+   * @return std::vector<LinearStateConstraint>
+   */
+  static std::vector<LinearStateConstraint> addBoundaryConditions(
+    const int & start_time = 0, const Eigen::Vector3d & start_position = Eigen::Vector3d::Zero(),
+    const std::optional<Eigen::Vector3d> & start_linear_velocity = std::nullopt,
+    const std::optional<Eigen::Vector3d> & start_linear_acceleration = std::nullopt,
+    const int & final_time = 0, const Eigen::Vector3d & final_position = Eigen::Vector3d::Zero(),
+    const std::optional<Eigen::Vector3d> & final_linear_velocity = std::nullopt,
+    const std::optional<Eigen::Vector3d> & final_linear_acceleration = std::nullopt);
+  static std::vector<AngularStateConstraint> addBoundaryConditions(
+    const int & start_time = 0,
+    const Eigen::Quaterniond & start_orientation = Eigen::Quaterniond::Identity(),
+    const std::optional<Eigen::Vector3d> & start_angular_velocity = std::nullopt,
+    const std::optional<Eigen::Vector3d> & start_angular_acceleration = std::nullopt,
+    const int & final_time = 0,
+    const Eigen::Quaterniond & final_orientation = Eigen::Quaterniond::Identity(),
+    const std::optional<Eigen::Vector3d> & final_angular_velocity = std::nullopt,
+    const std::optional<Eigen::Vector3d> & final_angular_acceleration = std::nullopt);
+
+  /**
    * @brief Add constraint
    *
    * @param constraints
@@ -77,24 +98,6 @@ public:
   static void addConstraint(
     std::vector<AngularStateConstraint> & constraints, const int & time,
     const Eigen::Quaterniond & orientation,
-    const std::optional<Eigen::Vector3d> & angular_velocity = std::nullopt,
-    const std::optional<Eigen::Vector3d> & angular_acceleration = std::nullopt);
-
-  /**
-   * @brief Create a constraint object
-   *
-   * @param time  // [ms]
-   * @param position  // [m]
-   * @param linear_velocity  // [m/s]
-   * @param linear_acceleration  // [m/s^2]
-   * @return std::vector<LinearStateConstraint>
-   */
-  static std::vector<LinearStateConstraint> createConstraint(
-    const int & time, const Eigen::Vector3d & position,
-    const std::optional<Eigen::Vector3d> & linear_velocity = std::nullopt,
-    const std::optional<Eigen::Vector3d> & linear_acceleration = std::nullopt);
-  static std::vector<AngularStateConstraint> createConstraint(
-    const int & time, const Eigen::Quaterniond & orientation,
     const std::optional<Eigen::Vector3d> & angular_velocity = std::nullopt,
     const std::optional<Eigen::Vector3d> & angular_acceleration = std::nullopt);
 
@@ -116,6 +119,23 @@ public:
   static Eigen::Vector3d logMap(const Eigen::Quaterniond & q_in);
 
 private:
+  /**
+   * @brief Create a constraint object
+   *
+   * @param time  // [ms]
+   * @param position  // [m]
+   * @param linear_velocity  // [m/s]
+   * @param linear_acceleration  // [m/s^2]
+   * @return std::vector<LinearStateConstraint>
+   */
+  static std::vector<LinearStateConstraint> createConstraint(
+    const int & time, const Eigen::Vector3d & position,
+    const std::optional<Eigen::Vector3d> & linear_velocity = std::nullopt,
+    const std::optional<Eigen::Vector3d> & linear_acceleration = std::nullopt);
+  static std::vector<AngularStateConstraint> createConstraint(
+    const int & time, const Eigen::Quaterniond & orientation,
+    const std::optional<Eigen::Vector3d> & angular_velocity = std::nullopt,
+    const std::optional<Eigen::Vector3d> & angular_acceleration = std::nullopt);
 };
 
 }  // namespace trajectory_generator

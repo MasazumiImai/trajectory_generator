@@ -29,6 +29,46 @@ TrajectoryGenerator::~TrajectoryGenerator()
   std::cout << "TrajectoryGenerator class is destructed." << std::endl;
 }
 
+std::vector<LinearStateConstraint> TrajectoryGenerator::addBoundaryConditions(
+  const int & start_time, const Eigen::Vector3d & start_position,
+  const std::optional<Eigen::Vector3d> & start_linear_velocity,
+  const std::optional<Eigen::Vector3d> & start_linear_acceleration, const int & final_time,
+  const Eigen::Vector3d & final_position,
+  const std::optional<Eigen::Vector3d> & final_linear_velocity,
+  const std::optional<Eigen::Vector3d> & final_linear_acceleration)
+{
+  auto start_conditions =
+    createConstraint(start_time, start_position, start_linear_velocity, start_linear_acceleration);
+
+  auto final_conditions =
+    createConstraint(final_time, final_position, final_linear_velocity, final_linear_acceleration);
+
+  auto constraints = start_conditions;
+  constraints.push_back(final_conditions.at(0));
+
+  return constraints;
+}
+
+std::vector<AngularStateConstraint> TrajectoryGenerator::addBoundaryConditions(
+  const int & start_time, const Eigen::Quaterniond & start_orientation,
+  const std::optional<Eigen::Vector3d> & start_angular_velocity,
+  const std::optional<Eigen::Vector3d> & start_angular_acceleration, const int & final_time,
+  const Eigen::Quaterniond & final_orientation,
+  const std::optional<Eigen::Vector3d> & final_angular_velocity,
+  const std::optional<Eigen::Vector3d> & final_angular_acceleration)
+{
+  auto start_conditions = createConstraint(
+    start_time, start_orientation, start_angular_velocity, start_angular_acceleration);
+
+  auto final_conditions = createConstraint(
+    final_time, final_orientation, final_angular_velocity, final_angular_acceleration);
+
+  auto constraints = start_conditions;
+  constraints.push_back(final_conditions.at(0));
+
+  return constraints;
+}
+
 void TrajectoryGenerator::addConstraint(
   std::vector<LinearStateConstraint> & constraints, const int & time,
   const Eigen::Vector3d & position, const std::optional<Eigen::Vector3d> & linear_velocity,
