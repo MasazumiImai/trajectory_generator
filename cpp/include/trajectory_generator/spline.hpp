@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef TRAJECTORY_GENERATOR__SPLINE_TRAJECTORY_HPP_
-#define TRAJECTORY_GENERATOR__SPLINE_TRAJECTORY_HPP_
+#ifndef TRAJECTORY_GENERATOR__SPLINE_HPP_
+#define TRAJECTORY_GENERATOR__SPLINE_HPP_
 
 #include <Eigen/Dense>
 #include <iostream>
@@ -26,13 +26,13 @@
 namespace trajectory_generator
 {
 
-class SplineTrajectory
+class Spline
 {
 public:
   TRAJECTORY_GENERATOR_PUBLIC
-  explicit SplineTrajectory();
+  explicit Spline();
 
-  virtual ~SplineTrajectory();
+  virtual ~Spline();
 
   static Eigen::Vector3d calculatePositionAtCertainTime(
     const double & time, const Eigen::MatrixXd & coefficients);
@@ -65,4 +65,4 @@ private:
 
 }  // namespace trajectory_generator
 
-#endif  // TRAJECTORY_GENERATOR__SPLINE_TRAJECTORY_HPP_
+#endif  // TRAJECTORY_GENERATOR__SPLINE_HPP_

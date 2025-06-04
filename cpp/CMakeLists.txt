@@ -16,7 +16,7 @@ set(INCLUDE_DIRS
 # library
 add_library(${PROJECT_NAME} SHARED
   src/trajectory_generator.cpp
-  src/spline_trajectory.cpp
+  src/spline.cpp
 )
 
 target_include_directories(${PROJECT_NAME} PUBLIC

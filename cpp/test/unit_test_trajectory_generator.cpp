@@ -14,7 +14,7 @@
 
 #include <gtest/gtest.h>
 
-#include "trajectory_generator/spline_trajectory.hpp"
+#include "trajectory_generator/spline.hpp"
 #include "trajectory_generator/trajectory_generator.hpp"
 
 namespace trajectory_generator
@@ -46,7 +46,7 @@ TEST(TrajectoryGenerator, splineCoefficientsTestCase)
 
   // Position trajectory
   const int kStepTime = 100;  // [ms]
-  const Eigen::Matrix3Xd trajectory = SplineTrajectory::calculateTrajectory(constraints, kStepTime);
+  const Eigen::Matrix3Xd trajectory = Spline::calculateTrajectory(constraints, kStepTime);
   std::cout << "trajectory = " << std::endl << trajectory.transpose() << std::endl;
 
   // Check results
@@ -60,7 +60,7 @@ TEST(TrajectoryGenerator, splineCoefficientsTestCase)
 
   // Linear velocity trajectory
   const Eigen::Matrix3Xd velocity_trajectory =
-    SplineTrajectory::calculateVelocityTrajectory(constraints, kStepTime);
+    Spline::calculateVelocityTrajectory(constraints, kStepTime);
   std::cout << "velocity_trajectory = " << std::endl
             << velocity_trajectory.transpose() << std::endl;
 
@@ -95,7 +95,7 @@ TEST(TrajectoryGenerator, splineCoefficientsTestCase)
 
   // Orientation trajectory
   const Eigen::Matrix4Xd angular_trajectory =
-    SplineTrajectory::calculateTrajectory(angular_constraints, kStepTime);
+    Spline::calculateTrajectory(angular_constraints, kStepTime);
   std::cout << "angular_trajectory = " << std::endl << angular_trajectory.transpose() << std::endl;
 
   // Check results
@@ -118,7 +118,7 @@ TEST(TrajectoryGenerator, splineCoefficientsTestCase)
 
   // Angular velocity trajectory
   const Eigen::Matrix3Xd angular_velocity_trajectory =
-    SplineTrajectory::calculateVelocityTrajectory(angular_constraints, kStepTime);
+    Spline::calculateVelocityTrajectory(angular_constraints, kStepTime);
   std::cout << "angular_velocity_trajectory = " << std::endl
             << angular_velocity_trajectory.transpose() << std::endl;
 }
