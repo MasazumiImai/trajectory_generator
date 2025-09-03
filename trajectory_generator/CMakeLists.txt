@@ -12,7 +12,7 @@ ament_auto_find_build_dependencies()
 # library
 ament_auto_add_library(trajectory_generator
   src/trajectory_generator.cpp
-  src/spline_trajectory.cpp
+  src/spline.cpp
 )
 
 # install header files

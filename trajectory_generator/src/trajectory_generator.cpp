@@ -14,170 +14,75 @@
 
 #include "trajectory_generator/trajectory_generator.hpp"
 
-#define DEBUG_ENABLED false
+#define DEBUG false
 
 namespace trajectory_generator
 {
 
-TrajectoryGenerator::TrajectoryGenerator()
+std::vector<VectorStateConstraint> createBoundaryConditions(
+  const VectorStateConstraint & start_constraint, const VectorStateConstraint & end_constraint)
 {
-  std::cout << "TrajectoryGenerator class is established." << std::endl;
+  std::vector<VectorStateConstraint> constraints;
+  constraints.reserve(2);
+  constraints.push_back(start_constraint);
+  constraints.push_back(end_constraint);
+  return constraints;
 }
 
-TrajectoryGenerator::~TrajectoryGenerator()
+void addConstraint(
+  std::vector<VectorStateConstraint> & constraints, const VectorStateConstraint & new_constraint)
 {
-  std::cout << "TrajectoryGenerator class is destructed." << std::endl;
+  constraints.push_back(new_constraint);
 }
 
-void TrajectoryGenerator::addConstraint(
-  std::vector<LinearStateConstraint> & constraints, const int & time,
-  const Eigen::Vector3d & position, const std::optional<Eigen::Vector3d> & linear_velocity,
-  const std::optional<Eigen::Vector3d> & linear_acceleration)
+std::vector<AngularStateConstraint> createBoundaryConditions(
+  const AngularStateConstraint & start_constraint, const AngularStateConstraint & end_constraint)
 {
-  auto new_constraint = createConstraint(time, position, linear_velocity, linear_acceleration);
-
-  constraints.push_back(new_constraint.at(0));
+  std::vector<AngularStateConstraint> constraints;
+  constraints.reserve(2);
+  constraints.push_back(start_constraint);
+  constraints.push_back(end_constraint);
+  return constraints;
 }
 
-void TrajectoryGenerator::addConstraint(
-  std::vector<AngularStateConstraint> & constraints, const int & time,
-  const Eigen::Quaterniond & orientation, const std::optional<Eigen::Vector3d> & angular_velocity,
-  const std::optional<Eigen::Vector3d> & angular_acceleration)
+void addConstraint(
+  std::vector<AngularStateConstraint> & constraints, const AngularStateConstraint & new_constraint)
 {
-  auto new_constraint = createConstraint(time, orientation, angular_velocity, angular_acceleration);
-
-  constraints.push_back(new_constraint.at(0));
+  constraints.push_back(new_constraint);
 }
 
-std::vector<LinearStateConstraint> TrajectoryGenerator::createConstraint(
-  const int & time, const Eigen::Vector3d & position,
-  const std::optional<Eigen::Vector3d> & linear_velocity,
-  const std::optional<Eigen::Vector3d> & linear_acceleration)
+void addConstraint(
+  std::vector<VectorStateConstraint> & constraints, double time,
+  const std::optional<Eigen::VectorXd> & position, const std::optional<Eigen::VectorXd> & velocity,
+  const std::optional<Eigen::VectorXd> & acceleration)
 {
-  std::vector<LinearStateConstraint> constraint(1);
-  constraint.at(0).time = (double)time * 0.001;  // [ms]
-  constraint.at(0).position = position;
-  if (linear_velocity) {
-    constraint.at(0).linear_velocity = linear_velocity;
-  }
-  if (linear_acceleration) {
-    constraint.at(0).linear_acceleration = linear_acceleration;
-  }
-  return constraint;
+  VectorStateConstraint new_constraint;
+  new_constraint.time = time;
+  new_constraint.position = position;
+  new_constraint.velocity = velocity;
+  new_constraint.acceleration = acceleration;
+  constraints.push_back(new_constraint);
 }
 
-std::vector<AngularStateConstraint> TrajectoryGenerator::createConstraint(
-  const int & time, const Eigen::Quaterniond & orientation,
-  const std::optional<Eigen::Vector3d> & angular_velocity,
-  const std::optional<Eigen::Vector3d> & angular_acceleration)
+Eigen::Quaterniond expMap(const Eigen::Vector3d & omega)
 {
-  std::vector<AngularStateConstraint> constraint(1);
-  constraint.at(0).time = (double)time * 0.001;  // [ms]
-  constraint.at(0).orientation = orientation;
-  if (angular_velocity) {
-    constraint.at(0).angular_velocity = angular_velocity;
-  }
-  if (angular_acceleration) {
-    constraint.at(0).angular_acceleration = angular_acceleration;
-  }
-  return constraint;
-}
-
-std::map<double, std::map<std::string, Eigen::Vector3d, std::greater<>>>
-TrajectoryGenerator::getConstraintsMap(const std::vector<LinearStateConstraint> & constraints)
-{
-  std::map<double, std::map<std::string, Eigen::Vector3d, std::greater<>>> constraints_map;
-
-  for (const LinearStateConstraint & condition : constraints) {
-    if (condition.position) {
-      constraints_map[condition.time]["x"] = condition.position.value();
-    }
-    if (condition.linear_velocity) {
-      constraints_map[condition.time]["dx"] = condition.linear_velocity.value();
-    }
-    if (condition.linear_acceleration) {
-      constraints_map[condition.time]["ddx"] = condition.linear_acceleration.value();
-    }
-  }
-  return constraints_map;
-}
-
-std::map<double, std::map<std::string, Eigen::Vector3d, std::greater<>>>
-TrajectoryGenerator::getConstraintsMap(const std::vector<AngularStateConstraint> & constraints)
-{
-  std::map<double, std::map<std::string, Eigen::Vector3d, std::greater<>>> constraints_map;
-
-  for (const AngularStateConstraint & condition : constraints) {
-    if (condition.orientation) {
-      Eigen::Vector3d theta = logMap(*condition.orientation);
-      constraints_map[condition.time]["x"] = theta;
-    }
-    if (condition.angular_velocity) {
-      constraints_map[condition.time]["dx"] = condition.angular_velocity.value();
-    }
-    if (condition.angular_acceleration) {
-      constraints_map[condition.time]["ddx"] = condition.angular_acceleration.value();
-    }
-  }
-  return constraints_map;
-}
-
-int TrajectoryGenerator::getNumberOfConstraints(
-  const std::map<double, std::map<std::string, Eigen::Vector3d, std::greater<>>> & constraints_map)
-{
-  int num_of_constraints = 0;
-  for (const auto & [time, state_map] : constraints_map) {
-    num_of_constraints += state_map.size();
-  }
-  return num_of_constraints;
-}
-
-bool TrajectoryGenerator::isStartFromZero(const double & start_time)
-{
-  return start_time == 0.0;
-}
-
-int TrajectoryGenerator::calculateMotionDuration(
-  const double & start_time, const double & final_time)
-{
-  double motion_duration = final_time - start_time;  // [s]
-  int motion_duration_ms = (int)(motion_duration * 1000.0);  // [ms]
-  return motion_duration_ms;
-}
-
-Eigen::Quaterniond TrajectoryGenerator::expMap(const Eigen::Vector3d & omega)
-{
-  double theta = omega.norm();
-  Eigen::Quaterniond q;
-
-  if (theta < 1e-10) {
-    q.w() = 1.0;
-    q.vec() = 0.5 * omega;
-  } else {
-    Eigen::Vector3d axis = omega / theta;
-    double half_theta = 0.5 * theta;
-    q.w() = std::cos(half_theta);
-    q.vec() = axis * std::sin(half_theta);
+  const double theta = omega.norm();
+  if (theta < 1e-9) {
+    return Eigen::Quaterniond::Identity();
   }
 
-  return q.normalized();
+  const Eigen::Vector3d axis = omega.normalized();
+  const double angle = theta;
+
+  Eigen::Quaterniond q(Eigen::AngleAxisd(angle, axis));
+  return q;
 }
 
-Eigen::Vector3d TrajectoryGenerator::logMap(const Eigen::Quaterniond & q_in)
+Eigen::Vector3d logMap(const Eigen::Quaterniond & q)
 {
-  Eigen::Quaterniond q = q_in.normalized();
-  double q_w = q.w();
-  Eigen::Vector3d q_v = q.vec();
-
-  double sin_theta = q_v.norm();
-
-  if (sin_theta < 1e-10) {
-    return 2.0 * q_v;
-  } else {
-    double theta = 2.0 * std::atan2(sin_theta, q_w);
-    Eigen::Vector3d axis = q_v / sin_theta;
-    return theta * axis;
-  }
+  Eigen::AngleAxisd angle_axis(q);
+  Eigen::Vector3d omega = angle_axis.angle() * angle_axis.axis();
+  return omega;
 }
 
 }  // namespace trajectory_generator
