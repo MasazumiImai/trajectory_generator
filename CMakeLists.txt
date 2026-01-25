@@ -10,7 +10,6 @@ endif()
 
 # find dependencies
 find_package(Eigen3 REQUIRED)
-find_package(rclcpp QUIET)
 
 # library
 add_library(${PROJECT_NAME} SHARED
@@ -73,25 +72,6 @@ install(FILES
   "${CMAKE_CURRENT_BINARY_DIR}/${PROJECT_NAME}ConfigVersion.cmake"
   DESTINATION ${CMAKE_INSTALL_LIBDIR}/cmake/${PROJECT_NAME}
 )
-
-if(rclcpp_FOUND)
-  add_executable(trajectory_generator_node
-    src/trajectory_generator_node.cpp
-  )
-
-  target_link_libraries(trajectory_generator_node
-    ${PROJECT_NAME}
-    rclcpp::rclcpp
-  )
-
-  install(TARGETS trajectory_generator_node
-    RUNTIME DESTINATION lib/${PROJECT_NAME}
-  )
-
-  install(DIRECTORY launch
-    DESTINATION share/${PROJECT_NAME}
-  )
-endif()
 
 # gtest
 if(BUILD_TESTING)

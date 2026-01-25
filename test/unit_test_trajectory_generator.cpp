@@ -44,10 +44,6 @@ TEST(TrajectoryGenerator, VectorSplineTaskSpace)
   mid_constraint.position = Eigen::Vector3d(0.5, 0.0, 0.5);
   mid_constraint.velocity = Eigen::Vector3d(0.5, 0.0, 0.5);
 
-  // std::vector<VectorStateConstraint> constraints;
-  // constraints.push_back(start_constraint);
-  // constraints.push_back(mid_constraint);
-  // constraints.push_back(end_constraint);
   std::vector<VectorStateConstraint> constraints =
     createBoundaryConditions(start_constraint, end_constraint);
   addConstraint(constraints, mid_constraint);
