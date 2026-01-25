@@ -172,10 +172,10 @@ TEST(TrajectoryGenerator, OrientationSpline)
   }
 }
 
+}  // namespace trajectory_generator
+
 int main(int argc, char ** argv)
 {
   testing::InitGoogleTest(&argc, argv);
   return RUN_ALL_TESTS();
 }
-
-}  // namespace trajectory_generator
