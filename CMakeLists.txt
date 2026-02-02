@@ -10,6 +10,7 @@ endif()
 
 # find dependencies
 find_package(Eigen3 REQUIRED)
+find_package(ament_cmake_gtest REQUIRED)
 
 # library
 add_library(${PROJECT_NAME} SHARED
