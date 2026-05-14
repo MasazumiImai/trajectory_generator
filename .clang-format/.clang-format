@@ -62,8 +62,8 @@ UseTab: Never
 # Include
 IncludeBlocks: Regroup
 IncludeCategories:
-  # Headers containing "trajectory_generator"
-  - Regex: ".*trajectory_generator.*"
+  # Headers containing "traj_gen"
+  - Regex: ".*traj_gen.*"
     Priority: 5
     CaseSensitive: true
   # Project's headers

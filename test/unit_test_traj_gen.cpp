@@ -14,10 +14,10 @@
 
 #include <gtest/gtest.h>
 
-#include "trajectory_generator/spline.hpp"
-#include "trajectory_generator/trajectory_generator.hpp"
+#include "traj_gen/spline.hpp"
+#include "traj_gen/traj_gen.hpp"
 
-namespace trajectory_generator
+namespace traj_gen
 {
 
 TEST(TrajectoryGenerator, VectorSplineTaskSpace)
@@ -168,7 +168,7 @@ TEST(TrajectoryGenerator, OrientationSpline)
   }
 }
 
-}  // namespace trajectory_generator
+}  // namespace traj_gen
 
 int main(int argc, char ** argv)
 {

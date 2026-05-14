@@ -1,5 +1,5 @@
 cmake_minimum_required(VERSION 3.14)
-project(trajectory_generator)
+project(traj_gen)
 
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
@@ -14,7 +14,7 @@ find_package(ament_cmake_gtest REQUIRED)
 
 # library
 add_library(${PROJECT_NAME} SHARED
-  src/trajectory_generator.cpp
+  src/traj_gen.cpp
   src/spline.cpp
 )
 
@@ -26,7 +26,7 @@ target_include_directories(${PROJECT_NAME} PUBLIC
 )
 
 target_compile_definitions(${PROJECT_NAME}
-  PRIVATE "TRAJECTORY_GENERATOR_BUILDING_LIBRARY"
+  PRIVATE "TRAJ_GEN_BUILDING_LIBRARY"
 )
 
 # install setting
@@ -80,14 +80,14 @@ if(BUILD_TESTING)
 
   find_package(GTest REQUIRED)
 
-  add_executable(unit_test_trajectory_generator
-    test/unit_test_trajectory_generator.cpp
+  add_executable(unit_test_traj_gen
+    test/unit_test_traj_gen.cpp
   )
-  target_link_libraries(unit_test_trajectory_generator
+  target_link_libraries(unit_test_traj_gen
     ${PROJECT_NAME}
     GTest::gtest
   )
 
   include(GoogleTest)
-  gtest_discover_tests(unit_test_trajectory_generator)
+  gtest_discover_tests(unit_test_traj_gen)
 endif()

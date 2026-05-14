@@ -12,8 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef TRAJECTORY_GENERATOR__SPLINE_HPP_
-#define TRAJECTORY_GENERATOR__SPLINE_HPP_
+#ifndef TRAJ_GEN__SPLINE_HPP_
+#define TRAJ_GEN__SPLINE_HPP_
 
 #include <Eigen/Dense>
 #include <iostream>
@@ -21,19 +21,18 @@
 #include <memory>
 #include <string>
 
-#include "trajectory_generator/trajectory_generator.hpp"
-#include "trajectory_generator/visibility_control.hpp"
+#include "traj_gen/traj_gen.hpp"
+#include "traj_gen/visibility_control.h"
 
-namespace trajectory_generator
+namespace traj_gen
 {
 
 /**
  * @brief Class for generating and managing spline trajectories of N-dimensional vectors (joint angles, positions, etc.).
  */
-class VectorSpline
+class TRAJ_GEN_PUBLIC VectorSpline
 {
 public:
-  TRAJECTORY_GENERATOR_PUBLIC
   explicit VectorSpline(const std::vector<VectorStateConstraint> & constraints, int dof);
   virtual ~VectorSpline() = default;
 
@@ -57,10 +56,9 @@ private:
 /**
  * @brief Class for generating and managing spline trajectories of orientation (quaternion).
  */
-class OrientationSpline
+class TRAJ_GEN_PUBLIC OrientationSpline
 {
 public:
-  TRAJECTORY_GENERATOR_PUBLIC
   explicit OrientationSpline(const std::vector<AngularStateConstraint> & constraints);
   virtual ~OrientationSpline() = default;
 
@@ -78,6 +76,6 @@ private:
   Eigen::Quaterniond start_orientation_;  // Reference starting orientation
 };
 
-}  // namespace trajectory_generator
+}  // namespace traj_gen
 
-#endif  // TRAJECTORY_GENERATOR__SPLINE_HPP_
+#endif  // TRAJ_GEN__SPLINE_HPP_

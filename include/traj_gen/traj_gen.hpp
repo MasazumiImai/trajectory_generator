@@ -12,19 +12,18 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef TRAJECTORY_GENERATOR__TRAJECTORY_GENERATOR_HPP_
-#define TRAJECTORY_GENERATOR__TRAJECTORY_GENERATOR_HPP_
+#ifndef TRAJ_GEN__TRAJ_GEN_HPP_
+#define TRAJ_GEN__TRAJ_GEN_HPP_
 
 #include <Eigen/Dense>
-#include <iostream>
 #include <map>
 #include <memory>
 #include <optional>
 #include <string>
 
-#include "trajectory_generator/visibility_control.hpp"
+#include "traj_gen/visibility_control.h"
 
-namespace trajectory_generator
+namespace traj_gen
 {
 
 /**
@@ -41,14 +40,14 @@ struct VectorStateConstraint
 /**
  * @brief Create a list of constraints with boundary conditions (start and end points) for vectors.
  */
-TRAJECTORY_GENERATOR_PUBLIC
+TRAJ_GEN_PUBLIC
 std::vector<VectorStateConstraint> createBoundaryConditions(
   const VectorStateConstraint & start_constraint, const VectorStateConstraint & end_constraint);
 
 /**
  * @brief Add a new constraint to the existing constraint list.
  */
-TRAJECTORY_GENERATOR_PUBLIC
+TRAJ_GEN_PUBLIC
 void addConstraint(
   std::vector<VectorStateConstraint> & constraints, const VectorStateConstraint & new_constraint);
 
@@ -66,25 +65,25 @@ struct AngularStateConstraint
 /**
  * @brief Create a list of constraints with boundary conditions (start and end points) for orientation.
  */
-TRAJECTORY_GENERATOR_PUBLIC
+TRAJ_GEN_PUBLIC
 std::vector<AngularStateConstraint> createBoundaryConditions(
   const AngularStateConstraint & start_constraint, const AngularStateConstraint & end_constraint);
 
 /**
  * @brief Add a new constraint to the existing constraint list.
  */
-TRAJECTORY_GENERATOR_PUBLIC
+TRAJ_GEN_PUBLIC
 void addConstraint(
   std::vector<AngularStateConstraint> & constraints, const AngularStateConstraint & new_constraint);
 
 // --- Mathematical utility functions for quaternion calculations ---
 
-TRAJECTORY_GENERATOR_PUBLIC
+TRAJ_GEN_PUBLIC
 Eigen::Quaterniond expMap(const Eigen::Vector3d & omega);
 
-TRAJECTORY_GENERATOR_PUBLIC
+TRAJ_GEN_PUBLIC
 Eigen::Vector3d logMap(const Eigen::Quaterniond & q);
 
-}  // namespace trajectory_generator
+}  // namespace traj_gen
 
-#endif  // TRAJECTORY_GENERATOR__TRAJECTORY_GENERATOR_HPP_
+#endif  // TRAJ_GEN__TRAJ_GEN_HPP_

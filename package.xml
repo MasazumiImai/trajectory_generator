@@ -1,7 +1,7 @@
 <?xml version="1.0"?>
 <?xml-model href="http://download.ros.org/schema/package_format3.xsd" schematypens="http://www.w3.org/2001/XMLSchema"?>
 <package format="3">
-  <name>trajectory_generator</name>
+  <name>traj_gen</name>
   <version>0.0.0</version>
   <description>Trajectory generation library (C++ / ROS 2 compatible)</description>
   <maintainer email="imai.masazumi.p2@dc.tohoku.ac.jp">Masazumi Imai</maintainer>
