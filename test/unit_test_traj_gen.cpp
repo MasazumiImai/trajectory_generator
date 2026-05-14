@@ -14,8 +14,9 @@
 
 #include <gtest/gtest.h>
 
+#include <iostream>
+
 #include "traj_gen/spline.hpp"
-#include "traj_gen/traj_gen.hpp"
 
 namespace traj_gen
 {

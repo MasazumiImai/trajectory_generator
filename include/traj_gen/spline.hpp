@@ -16,12 +16,11 @@
 #define TRAJ_GEN__SPLINE_HPP_
 
 #include <Eigen/Dense>
-#include <iostream>
 #include <map>
-#include <memory>
-#include <string>
+#include <vector>
 
-#include "traj_gen/traj_gen.hpp"
+#include "traj_gen/base.hpp"
+#include "traj_gen/common.hpp"
 #include "traj_gen/visibility_control.h"
 
 namespace traj_gen
@@ -30,17 +29,17 @@ namespace traj_gen
 /**
  * @brief Class for generating and managing spline trajectories of N-dimensional vectors (joint angles, positions, etc.).
  */
-class TRAJ_GEN_PUBLIC VectorSpline
+class TRAJ_GEN_PUBLIC VectorSpline : public VectorTrajectoryBase
 {
 public:
   explicit VectorSpline(const std::vector<VectorStateConstraint> & constraints, int dof);
-  virtual ~VectorSpline() = default;
+  ~VectorSpline() override = default;
 
   /** @brief Get position vector at specified time. */
-  Eigen::VectorXd getPosition(double time);
+  Eigen::VectorXd getPosition(double time) override;
 
   /** @brief Get velocity vector at specified time. */
-  Eigen::VectorXd getVelocity(double time);
+  Eigen::VectorXd getVelocity(double time) override;
 
 private:
   static std::map<double, std::map<int, Eigen::VectorXd>> constraintsToMap(
@@ -56,17 +55,17 @@ private:
 /**
  * @brief Class for generating and managing spline trajectories of orientation (quaternion).
  */
-class TRAJ_GEN_PUBLIC OrientationSpline
+class TRAJ_GEN_PUBLIC OrientationSpline : public OrientationTrajectoryBase
 {
 public:
   explicit OrientationSpline(const std::vector<AngularStateConstraint> & constraints);
-  virtual ~OrientationSpline() = default;
+  ~OrientationSpline() override = default;
 
   /** @brief Get orientation (quaternion) at specified time. */
-  Eigen::Quaterniond getOrientation(double time);
+  Eigen::Quaterniond getOrientation(double time) override;
 
   /** @brief Get angular velocity vector at specified time. */
-  Eigen::Vector3d getAngularVelocity(double time);
+  Eigen::Vector3d getAngularVelocity(double time) override;
 
 private:
   static std::vector<VectorStateConstraint> buildVectorConstraints(

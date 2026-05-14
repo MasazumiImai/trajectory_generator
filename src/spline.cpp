@@ -14,7 +14,8 @@
 
 #include "traj_gen/spline.hpp"
 
-#define DEBUG false
+#include <cmath>
+#include <stdexcept>
 
 namespace traj_gen
 {
