@@ -15,75 +15,8 @@
 #ifndef TRAJ_GEN__TRAJ_GEN_HPP_
 #define TRAJ_GEN__TRAJ_GEN_HPP_
 
-#include <Eigen/Dense>
-#include <map>
-#include <memory>
-#include <optional>
-#include <string>
-
-#include "traj_gen/visibility_control.h"
-
-namespace traj_gen
-{
-
-/**
- * @brief Constraints for N-dimensional vector spaces (joint space, work space position, etc.).
- */
-struct VectorStateConstraint
-{
-  double time;  // [s]
-  std::optional<Eigen::VectorXd> position;
-  std::optional<Eigen::VectorXd> velocity;
-  std::optional<Eigen::VectorXd> acceleration;
-};
-
-/**
- * @brief Create a list of constraints with boundary conditions (start and end points) for vectors.
- */
-TRAJ_GEN_PUBLIC
-std::vector<VectorStateConstraint> createBoundaryConditions(
-  const VectorStateConstraint & start_constraint, const VectorStateConstraint & end_constraint);
-
-/**
- * @brief Add a new constraint to the existing constraint list.
- */
-TRAJ_GEN_PUBLIC
-void addConstraint(
-  std::vector<VectorStateConstraint> & constraints, const VectorStateConstraint & new_constraint);
-
-/**
- * @brief Constraints for orientation (quaternion).
- */
-struct AngularStateConstraint
-{
-  double time;  // [s]
-  std::optional<Eigen::Quaterniond> orientation;
-  std::optional<Eigen::Vector3d> angular_velocity;
-  std::optional<Eigen::Vector3d> angular_acceleration;
-};
-
-/**
- * @brief Create a list of constraints with boundary conditions (start and end points) for orientation.
- */
-TRAJ_GEN_PUBLIC
-std::vector<AngularStateConstraint> createBoundaryConditions(
-  const AngularStateConstraint & start_constraint, const AngularStateConstraint & end_constraint);
-
-/**
- * @brief Add a new constraint to the existing constraint list.
- */
-TRAJ_GEN_PUBLIC
-void addConstraint(
-  std::vector<AngularStateConstraint> & constraints, const AngularStateConstraint & new_constraint);
-
-// --- Mathematical utility functions for quaternion calculations ---
-
-TRAJ_GEN_PUBLIC
-Eigen::Quaterniond expMap(const Eigen::Vector3d & omega);
-
-TRAJ_GEN_PUBLIC
-Eigen::Vector3d logMap(const Eigen::Quaterniond & q);
-
-}  // namespace traj_gen
+#include "traj_gen/base.hpp"
+#include "traj_gen/common.hpp"
+#include "traj_gen/spline.hpp"
 
 #endif  // TRAJ_GEN__TRAJ_GEN_HPP_

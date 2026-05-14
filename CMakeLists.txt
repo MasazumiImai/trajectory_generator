@@ -14,7 +14,7 @@ find_package(ament_cmake_gtest REQUIRED)
 
 # library
 add_library(${PROJECT_NAME} SHARED
-  src/traj_gen.cpp
+  src/common.cpp
   src/spline.cpp
 )
 
