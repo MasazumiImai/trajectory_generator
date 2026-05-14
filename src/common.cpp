@@ -12,11 +12,7 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "traj_gen/traj_gen.hpp"
-
-#include <iostream>
-
-#define DEBUG false
+#include "traj_gen/common.hpp"
 
 namespace traj_gen
 {
