@@ -3,14 +3,15 @@
 [![Build Status](https://github.com/MasazumiImai/trajectory_generator/actions/workflows/build.yml/badge.svg)](https://github.com/MasazumiImai/trajectory_generator/actions)
 [![License](https://img.shields.io/badge/License-Apache%202.0-blue.svg)](https://opensource.org/licenses/Apache-2.0)
 
-A lightweight and extensible C++ library for generating and interpolating trajectories for robotics. It provides robust interpolation for N-dimensional vectors (e.g., joint angles, task-space positions) and SO(3) orientations (quaternions).
+A lightweight C++ library for generating and interpolating trajectories for robotics.
+It provides robust interpolation for N-dimensional vectors (e.g., joint angles, task-space positions) and SO(3) orientations (quaternions).
 
 This package can be used as a standalone C++ library or integrated seamlessly as a ROS 2 (`ament_cmake`) package.
 
 ## Features
 
 * **N-Dimensional Vector Trajectory:** Generate smooth spline trajectories with position, velocity, and acceleration constraints.
-* **SO(3) Orientation Trajectory:** Perform accurate quaternion interpolation in the SO(3) space using Exponential and Logarithmic maps (`expMap` / `logMap`).
+* **SO(3) Orientation Trajectory:** Perform accurate quaternion interpolation in the SO(3) space using Exponential and Logarithmic maps.
 * **ROS 2 Ready:** Fully compatible with the ROS 2 build system (`colcon`).
 
 ## Installation & Build
