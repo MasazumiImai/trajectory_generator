@@ -12,36 +12,34 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#ifndef TRAJECTORY_GENERATOR__SPLINE_HPP_
-#define TRAJECTORY_GENERATOR__SPLINE_HPP_
+#ifndef TRAJ_GEN__SPLINE_HPP_
+#define TRAJ_GEN__SPLINE_HPP_
 
 #include <Eigen/Dense>
-#include <iostream>
 #include <map>
-#include <memory>
-#include <string>
+#include <vector>
 
-#include "trajectory_generator/trajectory_generator.hpp"
-#include "trajectory_generator/visibility_control.hpp"
+#include "traj_gen/base.hpp"
+#include "traj_gen/common.hpp"
+#include "traj_gen/visibility_control.h"
 
-namespace trajectory_generator
+namespace traj_gen
 {
 
 /**
  * @brief Class for generating and managing spline trajectories of N-dimensional vectors (joint angles, positions, etc.).
  */
-class VectorSpline
+class TRAJ_GEN_PUBLIC VectorSpline : public VectorTrajectoryBase
 {
 public:
-  TRAJECTORY_GENERATOR_PUBLIC
   explicit VectorSpline(const std::vector<VectorStateConstraint> & constraints, int dof);
-  virtual ~VectorSpline() = default;
+  ~VectorSpline() override = default;
 
   /** @brief Get position vector at specified time. */
-  Eigen::VectorXd getPosition(double time);
+  Eigen::VectorXd getPosition(double time) override;
 
   /** @brief Get velocity vector at specified time. */
-  Eigen::VectorXd getVelocity(double time);
+  Eigen::VectorXd getVelocity(double time) override;
 
 private:
   static std::map<double, std::map<int, Eigen::VectorXd>> constraintsToMap(
@@ -57,18 +55,17 @@ private:
 /**
  * @brief Class for generating and managing spline trajectories of orientation (quaternion).
  */
-class OrientationSpline
+class TRAJ_GEN_PUBLIC OrientationSpline : public OrientationTrajectoryBase
 {
 public:
-  TRAJECTORY_GENERATOR_PUBLIC
   explicit OrientationSpline(const std::vector<AngularStateConstraint> & constraints);
-  virtual ~OrientationSpline() = default;
+  ~OrientationSpline() override = default;
 
   /** @brief Get orientation (quaternion) at specified time. */
-  Eigen::Quaterniond getOrientation(double time);
+  Eigen::Quaterniond getOrientation(double time) override;
 
   /** @brief Get angular velocity vector at specified time. */
-  Eigen::Vector3d getAngularVelocity(double time);
+  Eigen::Vector3d getAngularVelocity(double time) override;
 
 private:
   static std::vector<VectorStateConstraint> buildVectorConstraints(
@@ -78,6 +75,6 @@ private:
   Eigen::Quaterniond start_orientation_;  // Reference starting orientation
 };
 
-}  // namespace trajectory_generator
+}  // namespace traj_gen
 
-#endif  // TRAJECTORY_GENERATOR__SPLINE_HPP_
+#endif  // TRAJ_GEN__SPLINE_HPP_

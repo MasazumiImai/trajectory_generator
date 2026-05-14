@@ -12,11 +12,9 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "trajectory_generator/trajectory_generator.hpp"
+#include "traj_gen/common.hpp"
 
-#define DEBUG false
-
-namespace trajectory_generator
+namespace traj_gen
 {
 
 std::vector<VectorStateConstraint> createBoundaryConditions(
@@ -85,4 +83,4 @@ Eigen::Vector3d logMap(const Eigen::Quaterniond & q)
   return omega;
 }
 
-}  // namespace trajectory_generator
+}  // namespace traj_gen

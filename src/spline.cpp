@@ -12,11 +12,12 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
-#include "trajectory_generator/spline.hpp"
+#include "traj_gen/spline.hpp"
 
-#define DEBUG false
+#include <cmath>
+#include <stdexcept>
 
-namespace trajectory_generator
+namespace traj_gen
 {
 
 VectorSpline::VectorSpline(const std::vector<VectorStateConstraint> & constraints, int dof)
@@ -149,4 +150,4 @@ std::vector<VectorStateConstraint> OrientationSpline::buildVectorConstraints(
   return vector_constraints;
 }
 
-}  // namespace trajectory_generator
+}  // namespace traj_gen
