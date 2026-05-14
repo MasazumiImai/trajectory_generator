@@ -1,0 +1,40 @@
+name: ROS 2 CI
+
+on:
+  push:
+    branches: "main"
+  pull_request:
+    branches: "main"
+
+jobs:
+  build-and-test:
+    runs-on: ubuntu-22.04
+    container:
+      image: ros:humble
+
+    steps:
+      - name: Install tools
+        run: apt-get update && apt-get install -y git
+
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          path: src/trajectory_generator
+
+      - name: Install dependencies
+        run: |
+          apt-get update
+          apt-get install -y python3-colcon-common-extensions
+          rosdep update
+          rosdep install --from-paths src --ignore-src -y
+
+      - name: Build package
+        run: |
+          . /opt/ros/humble/setup.sh
+          colcon build --packages-select traj_gen --cmake-args -DBUILD_TESTING=ON
+
+      - name: Run tests
+        run: |
+          . /opt/ros/humble/setup.sh
+          colcon test --packages-select traj_gen
+          colcon test-result --all
