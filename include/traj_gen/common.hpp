@@ -50,6 +50,15 @@ void addConstraint(
   std::vector<VectorStateConstraint> & constraints, const VectorStateConstraint & new_constraint);
 
 /**
+ * @brief Add a new constraint with separated position, velocity, and acceleration.
+ */
+TRAJ_GEN_PUBLIC
+void addConstraint(
+  std::vector<VectorStateConstraint> & constraints, double time,
+  const std::optional<Eigen::VectorXd> & position, const std::optional<Eigen::VectorXd> & velocity,
+  const std::optional<Eigen::VectorXd> & acceleration);
+
+/**
  * @brief Constraints for orientation (quaternion).
  */
 struct AngularStateConstraint
@@ -73,6 +82,16 @@ std::vector<AngularStateConstraint> createBoundaryConditions(
 TRAJ_GEN_PUBLIC
 void addConstraint(
   std::vector<AngularStateConstraint> & constraints, const AngularStateConstraint & new_constraint);
+
+/**
+ * @brief Add a new constraint with separated orientation, velocity, and acceleration.
+ */
+TRAJ_GEN_PUBLIC
+void addConstraint(
+  std::vector<AngularStateConstraint> & constraints, double time,
+  const std::optional<Eigen::Quaterniond> & orientation,
+  const std::optional<Eigen::Vector3d> & angular_velocity,
+  const std::optional<Eigen::Vector3d> & angular_acceleration);
 
 // --- Mathematical utility functions for quaternion calculations ---
 

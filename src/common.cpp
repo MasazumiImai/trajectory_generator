@@ -33,6 +33,19 @@ void addConstraint(
   constraints.push_back(new_constraint);
 }
 
+void addConstraint(
+  std::vector<VectorStateConstraint> & constraints, double time,
+  const std::optional<Eigen::VectorXd> & position, const std::optional<Eigen::VectorXd> & velocity,
+  const std::optional<Eigen::VectorXd> & acceleration)
+{
+  VectorStateConstraint new_constraint;
+  new_constraint.time = time;
+  new_constraint.position = position;
+  new_constraint.velocity = velocity;
+  new_constraint.acceleration = acceleration;
+  constraints.push_back(new_constraint);
+}
+
 std::vector<AngularStateConstraint> createBoundaryConditions(
   const AngularStateConstraint & start_constraint, const AngularStateConstraint & end_constraint)
 {
@@ -50,15 +63,16 @@ void addConstraint(
 }
 
 void addConstraint(
-  std::vector<VectorStateConstraint> & constraints, double time,
-  const std::optional<Eigen::VectorXd> & position, const std::optional<Eigen::VectorXd> & velocity,
-  const std::optional<Eigen::VectorXd> & acceleration)
+  std::vector<AngularStateConstraint> & constraints, double time,
+  const std::optional<Eigen::Quaterniond> & orientation,
+  const std::optional<Eigen::Vector3d> & angular_velocity,
+  const std::optional<Eigen::Vector3d> & angular_acceleration)
 {
-  VectorStateConstraint new_constraint;
+  AngularStateConstraint new_constraint;
   new_constraint.time = time;
-  new_constraint.position = position;
-  new_constraint.velocity = velocity;
-  new_constraint.acceleration = acceleration;
+  new_constraint.orientation = orientation;
+  new_constraint.angular_velocity = angular_velocity;
+  new_constraint.angular_acceleration = angular_acceleration;
   constraints.push_back(new_constraint);
 }
 
