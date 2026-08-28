@@ -6,7 +6,7 @@
 A lightweight C++ library for generating and interpolating trajectories for robotics.
 It provides robust interpolation for N-dimensional vectors (e.g., joint angles, task-space positions) and SO(3) orientations (quaternions).
 
-This package can be used as a standalone C++ library or integrated seamlessly as a ROS 2 (`ament_cmake`) package.
+This package can be used as a standalone C++ library or from a ROS 2 (`colcon`) workspace.
 
 ## Features
 
@@ -14,12 +14,25 @@ This package can be used as a standalone C++ library or integrated seamlessly as
 * **SO(3) Orientation Trajectory:** Perform accurate quaternion interpolation in the SO(3) space using Exponential and Logarithmic maps.
 * **ROS 2 Ready:** Fully compatible with the ROS 2 build system (`colcon`).
 
+## Input Contract
+
+* Every vector waypoint must contain position. Supported combinations are position only,
+  position and velocity, or position, velocity, and acceleration.
+* Every orientation waypoint must contain a finite, non-zero quaternion. Quaternions are
+  normalized internally; angular acceleration requires angular velocity at the same waypoint.
+* Waypoint times and state values must be finite, times must be unique, and vector dimensions
+  must match the configured degrees of freedom.
+* Queries outside the trajectory interval hold the nearest endpoint position or orientation and
+  return zero velocity.
+* Numerically rank-deficient or inaccurate constraint systems are rejected with an exception.
+
 ## Installation & Build
 
 ### Prerequisites
 
 * C++ 17 or higher
 * Eigen3
+* GTest (only when building tests)
 * ROS 2 (Optional, for `colcon` build)
 
 ### As a Standalone C++ Library
@@ -28,7 +41,7 @@ This package can be used as a standalone C++ library or integrated seamlessly as
 git clone https://github.com/MasazumiImai/trajectory_generator.git
 cd trajectory_generator
 mkdir build && cd build
-cmake ..
+cmake .. -DBUILD_TESTING=OFF
 make
 sudo make install
 ```
@@ -62,7 +75,7 @@ If you are using this library within a ROS 2 package, add the dependency to your
 
 ```xml
 <depend>traj_gen</depend>
-````
+```
 
 Then, configure your `CMakeLists.txt`:
 
@@ -70,7 +83,7 @@ Then, configure your `CMakeLists.txt`:
 find_package(traj_gen REQUIRED)
 
 add_executable(your_node src/your_node.cpp)
-ament_target_dependencies(your_node traj_gen)
+target_link_libraries(your_node PRIVATE traj_gen::traj_gen)
 ```
 
 ### C++ Example
@@ -79,6 +92,9 @@ Include the master header to access all trajectory generation features.
 
 ```C++
 #include <iostream>
+#include <memory>
+#include <vector>
+
 #include <traj_gen/traj_gen.hpp>
 
 int main() {
