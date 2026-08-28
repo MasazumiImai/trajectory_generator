@@ -44,6 +44,138 @@ Eigen::Quaterniond normalizedQuaternion(const Eigen::Quaterniond & quaternion)
   return Eigen::Quaterniond(scaled / scaled.norm());
 }
 
+double rotationVectorNorm(const Eigen::Vector3d & rotation_vector)
+{
+  if (!rotation_vector.allFinite()) {
+    throw std::runtime_error("Rotation-vector interpolation produced a non-finite value.");
+  }
+  const double theta = rotation_vector.stableNorm();
+  if (!std::isfinite(theta)) {
+    throw std::runtime_error("Rotation-vector norm cannot be represented.");
+  }
+  return theta;
+}
+
+Eigen::Vector3d applyLeftJacobian(
+  const Eigen::Vector3d & rotation_vector, const Eigen::Vector3d & value)
+{
+  constexpr double kSmallAngle = 1e-2;
+  const double theta = rotationVectorNorm(rotation_vector);
+  Eigen::Vector3d result;
+  if (theta < kSmallAngle) {
+    const double squared = theta * theta;
+    const double fourth = squared * squared;
+    const double a = 0.5 - squared / 24.0 + fourth / 720.0;
+    const double b = 1.0 / 6.0 - squared / 120.0 + fourth / 5040.0;
+    result = value + a * rotation_vector.cross(value) +
+      b * rotation_vector.cross(rotation_vector.cross(value));
+  } else {
+    const Eigen::Vector3d axis = rotation_vector / theta;
+    result = value + ((1.0 - std::cos(theta)) / theta) * axis.cross(value) +
+      (1.0 - std::sin(theta) / theta) * axis.cross(axis.cross(value));
+  }
+  if (!result.allFinite()) {
+    throw std::runtime_error("SO(3) left-Jacobian mapping produced a non-finite value.");
+  }
+  return result;
+}
+
+Eigen::Vector3d applyInverseLeftJacobian(
+  const Eigen::Vector3d & rotation_vector, const Eigen::Vector3d & value)
+{
+  constexpr double kSmallAngle = 1e-2;
+  const double theta = rotationVectorNorm(rotation_vector);
+  Eigen::Vector3d result;
+  if (theta < kSmallAngle) {
+    const double squared = theta * theta;
+    const double fourth = squared * squared;
+    const double c = 1.0 / 12.0 + squared / 720.0 + fourth / 30240.0;
+    result = value - 0.5 * rotation_vector.cross(value) +
+      c * rotation_vector.cross(rotation_vector.cross(value));
+  } else {
+    const double half_theta = 0.5 * theta;
+    const double sin_half_theta = std::sin(half_theta);
+    if (sin_half_theta == 0.0) {
+      throw std::runtime_error("SO(3) left Jacobian is singular for this rotation vector.");
+    }
+    const Eigen::Vector3d axis = rotation_vector / theta;
+    const double quadratic_coefficient = 1.0 - half_theta * std::cos(half_theta) / sin_half_theta;
+    result = value - half_theta * axis.cross(value) +
+      quadratic_coefficient * axis.cross(axis.cross(value));
+  }
+  if (!result.allFinite()) {
+    throw std::runtime_error("SO(3) inverse left-Jacobian mapping produced a non-finite value.");
+  }
+  return result;
+}
+
+Eigen::Vector3d leftJacobianDerivativeTimes(
+  const Eigen::Vector3d & rotation_vector, const Eigen::Vector3d & rotation_vector_velocity)
+{
+  constexpr double kSmallAngle = 1e-2;
+  const double theta = rotationVectorNorm(rotation_vector);
+  const double projection = rotation_vector.dot(rotation_vector_velocity);
+  if (!std::isfinite(projection)) {
+    throw std::runtime_error("SO(3) Jacobian derivative cannot be represented.");
+  }
+
+  double b;
+  double a_dot;
+  double b_dot;
+  if (theta < kSmallAngle) {
+    const double squared = theta * theta;
+    const double fourth = squared * squared;
+    b = 1.0 / 6.0 - squared / 120.0 + fourth / 5040.0;
+    a_dot = (-1.0 / 12.0 + squared / 180.0 - fourth / 6720.0) * projection;
+    b_dot = (-1.0 / 60.0 + squared / 1260.0 - fourth / 60480.0) * projection;
+  } else {
+    const double squared = theta * theta;
+    const double cubed = squared * theta;
+    const double fourth = squared * squared;
+    const double fifth = fourth * theta;
+    const double sin_theta = std::sin(theta);
+    const double one_minus_cos = 1.0 - std::cos(theta);
+    b = (theta - sin_theta) / cubed;
+    a_dot = (theta * sin_theta - 2.0 * one_minus_cos) * projection / fourth;
+    b_dot = (theta * one_minus_cos - 3.0 * (theta - sin_theta)) * projection / fifth;
+  }
+
+  const Eigen::Vector3d first_cross = rotation_vector.cross(rotation_vector_velocity);
+  const Eigen::Vector3d result = a_dot * first_cross + b_dot * rotation_vector.cross(first_cross) +
+    b * rotation_vector_velocity.cross(first_cross);
+  if (!result.allFinite()) {
+    throw std::runtime_error("SO(3) Jacobian derivative produced a non-finite value.");
+  }
+  return result;
+}
+
+VectorStateConstraint toRotationVectorConstraint(
+  const AngularStateConstraint & constraint, const Eigen::Vector3d & rotation_vector)
+{
+  VectorStateConstraint vector_constraint;
+  vector_constraint.time = constraint.time;
+  vector_constraint.position = rotation_vector;
+  if (!constraint.angular_velocity) {
+    return vector_constraint;
+  }
+
+  const Eigen::Vector3d rotation_vector_velocity =
+    applyInverseLeftJacobian(rotation_vector, *constraint.angular_velocity);
+  vector_constraint.velocity = rotation_vector_velocity;
+  if (constraint.angular_acceleration) {
+    const Eigen::Vector3d jacobian_derivative =
+      leftJacobianDerivativeTimes(rotation_vector, rotation_vector_velocity);
+    const Eigen::Vector3d remaining_acceleration =
+      *constraint.angular_acceleration - jacobian_derivative;
+    if (!remaining_acceleration.allFinite()) {
+      throw std::runtime_error("Angular-acceleration mapping produced a non-finite value.");
+    }
+    vector_constraint.acceleration =
+      applyInverseLeftJacobian(rotation_vector, remaining_acceleration);
+  }
+  return vector_constraint;
+}
+
 int derivativeCount(const VectorStateConstraint & constraint)
 {
   if (constraint.acceleration) {
@@ -331,15 +463,27 @@ Eigen::VectorXd VectorSpline::evaluateSegment(
 }
 
 OrientationSpline::OrientationSpline(const std::vector<AngularStateConstraint> & constraints)
-: vector_spline_(buildVectorConstraints(constraints), 3)
 {
-  const auto [start, end] = std::minmax_element(
-    constraints.begin(), constraints.end(),
-    [](const auto & lhs, const auto & rhs) { return lhs.time < rhs.time; });
-  start_orientation_ = normalizedQuaternion(*start->orientation);
-  end_orientation_ = normalizedQuaternion(*end->orientation);
-  start_time_ = start->time;
-  end_time_ = end->time;
+  const auto sorted_constraints = validateAndSortConstraints(constraints);
+  start_time_ = sorted_constraints.front().time;
+  end_time_ = sorted_constraints.back().time;
+  start_orientation_ = *sorted_constraints.front().orientation;
+  end_orientation_ = *sorted_constraints.back().orientation;
+  single_point_angular_velocity_ =
+    sorted_constraints.front().angular_velocity.value_or(Eigen::Vector3d::Zero());
+
+  knot_times_.reserve(sorted_constraints.size());
+  knot_orientations_.reserve(sorted_constraints.size());
+  for (const auto & constraint : sorted_constraints) {
+    knot_times_.push_back(constraint.time);
+    knot_orientations_.push_back(*constraint.orientation);
+  }
+
+  segment_splines_.reserve(sorted_constraints.size() - 1);
+  for (std::size_t i = 0; i + 1 < sorted_constraints.size(); ++i) {
+    segment_splines_.emplace_back(
+      buildVectorConstraints(sorted_constraints[i], sorted_constraints[i + 1]), 3);
+  }
 }
 
 Eigen::Quaterniond OrientationSpline::getOrientation(double time)
@@ -351,10 +495,19 @@ Eigen::Quaterniond OrientationSpline::getOrientation(double time)
   if (time > end_time_) {
     return end_orientation_;
   }
+  if (segment_splines_.empty()) {
+    return start_orientation_;
+  }
 
-  Eigen::Vector3d delta_omega = vector_spline_.getPosition(time);
-  Eigen::Quaterniond delta_q = expMap(delta_omega);
-  return delta_q * start_orientation_;
+  const std::size_t segment = segmentIndex(time);
+  if (time == knot_times_[segment]) {
+    return knot_orientations_[segment];
+  }
+  if (time == knot_times_[segment + 1]) {
+    return knot_orientations_[segment + 1];
+  }
+  const Eigen::Vector3d rotation_vector = segment_splines_[segment].getPosition(time);
+  return normalizedQuaternion(expMap(rotation_vector) * knot_orientations_[segment]);
 }
 
 Eigen::Vector3d OrientationSpline::getAngularVelocity(double time)
@@ -363,16 +516,25 @@ Eigen::Vector3d OrientationSpline::getAngularVelocity(double time)
   if (time < start_time_ || time > end_time_) {
     return Eigen::Vector3d::Zero();
   }
-  return vector_spline_.getVelocity(time);
+  if (segment_splines_.empty()) {
+    return single_point_angular_velocity_;
+  }
+
+  const std::size_t segment = segmentIndex(time);
+  const Eigen::Vector3d rotation_vector = segment_splines_[segment].getPosition(time);
+  const Eigen::Vector3d rotation_vector_velocity = segment_splines_[segment].getVelocity(time);
+  return applyLeftJacobian(rotation_vector, rotation_vector_velocity);
 }
 
-std::vector<VectorStateConstraint> OrientationSpline::buildVectorConstraints(
+std::vector<AngularStateConstraint> OrientationSpline::validateAndSortConstraints(
   const std::vector<AngularStateConstraint> & constraints)
 {
   if (constraints.empty()) {
     throw std::invalid_argument("At least one orientation waypoint is required.");
   }
 
+  std::vector<AngularStateConstraint> sorted_constraints;
+  sorted_constraints.reserve(constraints.size());
   for (const auto & constraint : constraints) {
     if (!std::isfinite(constraint.time)) {
       throw std::invalid_argument("Orientation waypoint time must be finite.");
@@ -385,39 +547,58 @@ std::vector<VectorStateConstraint> OrientationSpline::buildVectorConstraints(
         "Angular acceleration requires angular "
         "velocity at the same waypoint.");
     }
-    normalizedQuaternion(*constraint.orientation);
     if (constraint.angular_velocity && !constraint.angular_velocity->allFinite()) {
       throw std::invalid_argument("Angular velocity must contain only finite values.");
     }
     if (constraint.angular_acceleration && !constraint.angular_acceleration->allFinite()) {
       throw std::invalid_argument("Angular acceleration must contain only finite values.");
     }
+
+    AngularStateConstraint normalized = constraint;
+    normalized.orientation = normalizedQuaternion(*constraint.orientation);
+    sorted_constraints.push_back(normalized);
   }
 
-  const auto start = std::min_element(
-    constraints.begin(), constraints.end(),
+  std::sort(
+    sorted_constraints.begin(), sorted_constraints.end(),
     [](const auto & lhs, const auto & rhs) { return lhs.time < rhs.time; });
-  const Eigen::Quaterniond start_orientation = normalizedQuaternion(*start->orientation);
+  for (std::size_t i = 1; i < sorted_constraints.size(); ++i) {
+    if (sorted_constraints[i - 1].time == sorted_constraints[i].time) {
+      throw std::invalid_argument("Orientation waypoint times must be unique.");
+    }
 
-  std::vector<VectorStateConstraint> vector_constraints;
-  vector_constraints.reserve(constraints.size());
-  for (const auto & ac : constraints) {
-    VectorStateConstraint vc;
-    vc.time = ac.time;
-    // Calculate the difference quaternion and convert it to a rotation vector
-    // using a logarithmic mapping.
-    const Eigen::Quaterniond orientation = normalizedQuaternion(*ac.orientation);
-    const Eigen::Quaterniond delta_q = orientation * start_orientation.conjugate();
-    vc.position = logMap(delta_q);
-    if (ac.angular_velocity) {
-      vc.velocity = *ac.angular_velocity;
+    const Eigen::Quaterniond & previous = *sorted_constraints[i - 1].orientation;
+    Eigen::Quaterniond & current = *sorted_constraints[i].orientation;
+    const double dot = previous.dot(current);
+    bool flip = dot < 0.0;
+    if (dot == 0.0) {
+      const Eigen::Quaterniond relative = current * previous.conjugate();
+      Eigen::Index dominant_axis;
+      relative.vec().cwiseAbs().maxCoeff(&dominant_axis);
+      flip = relative.vec()(dominant_axis) < 0.0;
     }
-    if (ac.angular_acceleration) {
-      vc.acceleration = *ac.angular_acceleration;
+    if (flip) {
+      sorted_constraints[i].orientation->coeffs() *= -1.0;
     }
-    vector_constraints.push_back(vc);
   }
-  return vector_constraints;
+  return sorted_constraints;
+}
+
+std::vector<VectorStateConstraint> OrientationSpline::buildVectorConstraints(
+  const AngularStateConstraint & start, const AngularStateConstraint & end)
+{
+  const Eigen::Quaterniond relative_orientation = *end.orientation * start.orientation->conjugate();
+  const Eigen::Vector3d end_rotation_vector = logMap(relative_orientation);
+  return {
+    toRotationVectorConstraint(start, Eigen::Vector3d::Zero()),
+    toRotationVectorConstraint(end, end_rotation_vector)};
+}
+
+std::size_t OrientationSpline::segmentIndex(double time) const
+{
+  const auto upper = std::upper_bound(knot_times_.begin(), knot_times_.end(), time);
+  const std::size_t knot = static_cast<std::size_t>(upper - knot_times_.begin());
+  return std::min(knot - 1, segment_splines_.size() - 1);
 }
 
 }  // namespace traj_gen

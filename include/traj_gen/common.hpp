@@ -66,8 +66,8 @@ struct AngularStateConstraint
 {
   double time{std::numeric_limits<double>::quiet_NaN()};  // [s]
   std::optional<Eigen::Quaterniond> orientation;
-  std::optional<Eigen::Vector3d> angular_velocity;
-  std::optional<Eigen::Vector3d> angular_acceleration;
+  std::optional<Eigen::Vector3d> angular_velocity;  // Spatial/world frame [rad/s]
+  std::optional<Eigen::Vector3d> angular_acceleration;  // Spatial/world frame [rad/s^2]
 };
 
 /**
@@ -99,6 +99,8 @@ void addConstraint(
 TRAJ_GEN_PUBLIC
 Eigen::Quaterniond expMap(const Eigen::Vector3d & omega);
 
+/** @brief Return the principal rotation vector (norm at most pi) for a
+ * quaternion. */
 TRAJ_GEN_PUBLIC
 Eigen::Vector3d logMap(const Eigen::Quaterniond & q);
 

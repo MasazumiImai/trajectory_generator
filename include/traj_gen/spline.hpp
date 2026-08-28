@@ -81,30 +81,45 @@ class TRAJ_GEN_PUBLIC OrientationSpline : public OrientationTrajectoryBase
 {
 public:
   /**
-   * @brief Build an orientation trajectory from finite, uniquely timed Q/QV/QVA waypoints.
+   * @brief Build an orientation trajectory from finite, uniquely timed Q/QV/QVA
+   * waypoints.
    *
-   * Input quaternions must be non-zero and are normalized internally.
+   * Input quaternions must be non-zero and are normalized internally. Each
+   * adjacent pair uses the principal (shortest-arc) relative rotation and q(t)
+   * = Exp(phi(t)) * q_i. Angular velocity and acceleration constraints use the
+   * spatial/world frame, i.e. q_dot = 0.5 * [0, omega] * q.
    * @throws std::invalid_argument for malformed waypoints.
-   * @throws std::runtime_error when a segment cannot be represented or solved accurately.
+   * @throws std::runtime_error when a segment cannot be represented or solved
+   * accurately.
    */
   explicit OrientationSpline(const std::vector<AngularStateConstraint> & constraints);
   ~OrientationSpline() override = default;
 
-  /** @brief Get orientation, holding the nearest endpoint outside the trajectory interval. */
+  /** @brief Get orientation, holding the nearest endpoint outside the
+   * trajectory interval. */
   Eigen::Quaterniond getOrientation(double time) override;
 
-  /** @brief Get angular velocity, returning zero outside the trajectory interval. */
+  /** @brief Get spatial/world-frame angular velocity, returning zero outside
+   * the interval. */
   Eigen::Vector3d getAngularVelocity(double time) override;
 
 private:
-  static std::vector<VectorStateConstraint> buildVectorConstraints(
+  static std::vector<AngularStateConstraint> validateAndSortConstraints(
     const std::vector<AngularStateConstraint> & constraints);
 
-  VectorSpline vector_spline_;  // Use VectorSpline internally to interpolate rotation vectors.
+  static std::vector<VectorStateConstraint> buildVectorConstraints(
+    const AngularStateConstraint & start, const AngularStateConstraint & end);
+
+  std::size_t segmentIndex(double time) const;
+
+  std::vector<double> knot_times_;
+  std::vector<Eigen::Quaterniond> knot_orientations_;
+  std::vector<VectorSpline> segment_splines_;
   Eigen::Quaterniond start_orientation_;  // Reference starting orientation
   Eigen::Quaterniond end_orientation_;
   double start_time_;
   double end_time_;
+  Eigen::Vector3d single_point_angular_velocity_;
 };
 
 }  // namespace traj_gen

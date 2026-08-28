@@ -44,6 +44,30 @@ AngularStateConstraint orientationWaypoint(double time, const Eigen::Quaterniond
   return constraint;
 }
 
+Eigen::Quaterniond negatedQuaternion(Eigen::Quaterniond quaternion)
+{
+  quaternion.coeffs() *= -1.0;
+  return quaternion;
+}
+
+Eigen::Quaterniond zRotation(double angle)
+{
+  return Eigen::Quaterniond(Eigen::AngleAxisd(angle, Eigen::Vector3d::UnitZ()));
+}
+
+double orientationError(const Eigen::Quaterniond & actual, const Eigen::Quaterniond & expected)
+{
+  return logMap(actual * expected.conjugate()).norm();
+}
+
+Eigen::Vector3d finiteDifferenceSpatialAngularVelocity(
+  OrientationSpline & spline, double time, double step)
+{
+  const Eigen::Quaterniond relative =
+    spline.getOrientation(time + step) * spline.getOrientation(time - step).conjugate();
+  return logMap(relative) / (2.0 * step);
+}
+
 }  // namespace
 
 TEST(TrajectoryGenerator, VectorSplineTaskSpace)
@@ -232,6 +256,118 @@ TEST(TrajectoryGenerator, OrientationSplineIsInvariantToAbsoluteTimeOffset)
   EXPECT_EQ(single_point.getAngularVelocity(base_time), *single.angular_velocity);
   EXPECT_TRUE(single_point.getAngularVelocity(base_time - 1.0).isZero());
   EXPECT_TRUE(single_point.getAngularVelocity(base_time + 1.0).isZero());
+}
+
+TEST(TrajectoryGenerator, OrientationSplineUsesAdjacentShortestArcs)
+{
+  const Eigen::Quaterniond identity = Eigen::Quaterniond::Identity();
+  const Eigen::Quaterniond plus_170 = zRotation(170.0 * kPi / 180.0);
+  const Eigen::Quaterniond minus_170 = zRotation(-170.0 * kPi / 180.0);
+  OrientationSpline spline(
+    {orientationWaypoint(2.0, minus_170), orientationWaypoint(0.0, identity),
+     orientationWaypoint(1.0, plus_170)});
+
+  EXPECT_NEAR(
+    orientationError(spline.getOrientation(0.5), zRotation(85.0 * kPi / 180.0)), 0.0, 2e-12);
+  EXPECT_NEAR(orientationError(spline.getOrientation(1.5), zRotation(kPi)), 0.0, 2e-12);
+  EXPECT_NEAR(spline.getAngularVelocity(0.5).z(), 170.0 * kPi / 180.0, 2e-12);
+  EXPECT_NEAR(spline.getAngularVelocity(1.0).z(), 20.0 * kPi / 180.0, 2e-12);
+  EXPECT_NEAR(spline.getAngularVelocity(1.5).z(), 20.0 * kPi / 180.0, 2e-12);
+
+  OrientationSpline sign_flipped(
+    {orientationWaypoint(0.0, negatedQuaternion(identity)), orientationWaypoint(1.0, plus_170),
+     orientationWaypoint(2.0, negatedQuaternion(minus_170))});
+  for (const double time : {0.0, 0.25, 0.75, 1.0, 1.25, 1.75, 2.0}) {
+    EXPECT_NEAR(
+      orientationError(spline.getOrientation(time), sign_flipped.getOrientation(time)), 0.0, 2e-12);
+    EXPECT_NEAR(
+      (spline.getAngularVelocity(time) - sign_flipped.getAngularVelocity(time)).norm(), 0.0, 2e-12);
+  }
+
+  OrientationSpline wraps_270(
+    {orientationWaypoint(0.0, identity), orientationWaypoint(1.0, zRotation(1.5 * kPi))});
+  EXPECT_NEAR(orientationError(wraps_270.getOrientation(0.5), zRotation(-kPi / 4.0)), 0.0, 2e-12);
+  EXPECT_NEAR(wraps_270.getAngularVelocity(0.5).z(), -kPi / 2.0, 2e-12);
+
+  const Eigen::Quaterniond negative_x_pi(0.0, -1.0, 0.0, 0.0);
+  OrientationSpline pi_tie(
+    {orientationWaypoint(0.0, identity), orientationWaypoint(1.0, negative_x_pi)});
+  EXPECT_NEAR(
+    orientationError(pi_tie.getOrientation(0.5), expMap(Eigen::Vector3d(kPi / 2.0, 0.0, 0.0))), 0.0,
+    2e-12);
+  EXPECT_GT(pi_tie.getOrientation(1.0 - 1e-9).dot(pi_tie.getOrientation(1.0)), 0.0);
+}
+
+TEST(TrajectoryGenerator, OrientationSplineUsesSpatialAngularVelocity)
+{
+  const Eigen::Quaterniond start_orientation = Eigen::AngleAxisd(0.7, Eigen::Vector3d::UnitZ()) *
+    Eigen::AngleAxisd(-0.2, Eigen::Vector3d::UnitY());
+  AngularStateConstraint start = orientationWaypoint(0.0, start_orientation);
+  start.angular_velocity = Eigen::Vector3d(0.4, 0.0, 0.0);
+
+  const Eigen::Vector3d end_rotation_vector(0.4, -0.3, 0.2);
+  AngularStateConstraint end =
+    orientationWaypoint(1.0, expMap(end_rotation_vector) * start_orientation);
+  end.angular_velocity =
+    Eigen::Vector3d(0.38188815796745035, -0.6721716607838687, 0.5279661928892961);
+
+  OrientationSpline spline({end, start});
+  const Eigen::Vector3d mid_rotation_vector(0.2, -0.075, 0.025);
+  const Eigen::Quaterniond expected_mid = expMap(mid_rotation_vector) * start_orientation;
+  const Eigen::Vector3d expected_mid_velocity(
+    0.3985894900346438, -0.3089794165647713, 0.1343458300285361);
+  EXPECT_NEAR(orientationError(spline.getOrientation(0.5), expected_mid), 0.0, 2e-12);
+  EXPECT_NEAR((spline.getAngularVelocity(0.5) - expected_mid_velocity).norm(), 0.0, 2e-12);
+  EXPECT_NEAR(
+    (finiteDifferenceSpatialAngularVelocity(spline, 0.5, 1e-6) - spline.getAngularVelocity(0.5))
+      .norm(),
+    0.0, 2e-8);
+}
+
+TEST(TrajectoryGenerator, OrientationSplineMapsSpatialAngularAcceleration)
+{
+  const Eigen::Quaterniond start_orientation = Eigen::AngleAxisd(-0.4, Eigen::Vector3d::UnitX()) *
+    Eigen::AngleAxisd(0.3, Eigen::Vector3d::UnitZ());
+  const Eigen::Vector3d first_derivative(0.4, -0.2, 0.1);
+  const Eigen::Vector3d second_derivative(-0.3, 0.5, 0.2);
+
+  AngularStateConstraint start = orientationWaypoint(0.0, start_orientation);
+  start.angular_velocity = first_derivative;
+  start.angular_acceleration = second_derivative;
+
+  const Eigen::Vector3d end_rotation_vector(0.25, 0.05, 0.2);
+  AngularStateConstraint end =
+    orientationWaypoint(1.0, expMap(end_rotation_vector) * start_orientation);
+  end.angular_velocity =
+    Eigen::Vector3d(0.08010019806719039, 0.26834624733880114, 0.3327881905813118);
+  end.angular_acceleration =
+    Eigen::Vector3d(-0.33323399817986465, 0.4337928010577274, 0.2663425415466344);
+
+  OrientationSpline spline({end, start});
+  const Eigen::Vector3d mid_rotation_vector(0.1625, -0.0375, 0.075);
+  const Eigen::Vector3d expected_mid_velocity(
+    0.24445305195972805, 0.042530578917350646, 0.2082836768792646);
+  const Eigen::Vector3d expected_mid_acceleration(
+    -0.32153469178829164, 0.46908474306505415, 0.23258050625179283);
+  EXPECT_NEAR(
+    orientationError(spline.getOrientation(0.5), expMap(mid_rotation_vector) * start_orientation),
+    0.0, 2e-12);
+  EXPECT_NEAR((spline.getAngularVelocity(0.5) - expected_mid_velocity).norm(), 0.0, 2e-12);
+
+  constexpr double step = 1e-4;
+  const Eigen::Vector3d mid_acceleration =
+    (spline.getAngularVelocity(0.5 + step) - spline.getAngularVelocity(0.5 - step)) / (2.0 * step);
+  const Eigen::Vector3d start_acceleration =
+    (-3.0 * spline.getAngularVelocity(0.0) + 4.0 * spline.getAngularVelocity(step) -
+     spline.getAngularVelocity(2.0 * step)) /
+    (2.0 * step);
+  const Eigen::Vector3d end_acceleration =
+    (3.0 * spline.getAngularVelocity(1.0) - 4.0 * spline.getAngularVelocity(1.0 - step) +
+     spline.getAngularVelocity(1.0 - 2.0 * step)) /
+    (2.0 * step);
+  EXPECT_NEAR((mid_acceleration - expected_mid_acceleration).norm(), 0.0, 2e-5);
+  EXPECT_NEAR((start_acceleration - *start.angular_acceleration).norm(), 0.0, 2e-5);
+  EXPECT_NEAR((end_acceleration - *end.angular_acceleration).norm(), 0.0, 2e-5);
 }
 
 TEST(TrajectoryGenerator, VectorSplineRejectsInvalidWaypoints)
@@ -544,6 +680,22 @@ TEST(TrajectoryGenerator, RotationMapsRejectInvalidInputs)
   const Eigen::Quaterniond huge_rotation = expMap(Eigen::Vector3d(1e200, 1e200, 0.0));
   EXPECT_TRUE(huge_rotation.coeffs().allFinite());
   EXPECT_NEAR(huge_rotation.norm(), 1.0, 1e-12);
+
+  const Eigen::Vector3d tiny_rotation(1e-12, -2e-12, 3e-12);
+  const Eigen::Quaterniond tiny_quaternion = expMap(tiny_rotation);
+  EXPECT_GT(tiny_quaternion.vec().norm(), 0.0);
+  EXPECT_NEAR((2.0 * tiny_quaternion.vec() - tiny_rotation).norm(), 0.0, 1e-26);
+  EXPECT_NEAR((logMap(tiny_quaternion) - tiny_rotation).norm(), 0.0, 1e-24);
+  EXPECT_NEAR((logMap(negatedQuaternion(tiny_quaternion)) - tiny_rotation).norm(), 0.0, 1e-24);
+
+  const Eigen::Vector3d rotation_vector(0.4, -0.2, 0.1);
+  const Eigen::Quaterniond quaternion = expMap(rotation_vector);
+  EXPECT_NEAR((logMap(quaternion) - rotation_vector).norm(), 0.0, 1e-13);
+  EXPECT_NEAR((logMap(negatedQuaternion(quaternion)) - rotation_vector).norm(), 0.0, 1e-13);
+  EXPECT_NEAR(
+    (logMap(Eigen::Quaterniond(0.0, -1.0, 0.0, 0.0)) - Eigen::Vector3d(kPi, 0.0, 0.0)).norm(), 0.0,
+    1e-13);
+  EXPECT_TRUE(logMap(Eigen::Quaterniond(-1.0, 0.0, 0.0, 0.0)).isZero(0.0));
 }
 
 }  // namespace traj_gen

@@ -89,15 +89,25 @@ Eigen::Quaterniond expMap(const Eigen::Vector3d & omega)
   if (!std::isfinite(theta)) {
     throw std::invalid_argument("Rotation vector norm must be finite.");
   }
-  if (theta < 1e-9) {
-    return Eigen::Quaterniond::Identity();
+
+  const double half_theta = 0.5 * theta;
+  Eigen::Quaterniond quaternion;
+  if (theta < 1e-3) {
+    const double theta_squared = theta * theta;
+    const double theta_fourth = theta_squared * theta_squared;
+    const double vector_scale = 0.5 - theta_squared / 48.0 + theta_fourth / 3840.0;
+    quaternion = Eigen::Quaterniond(
+      1.0 - theta_squared / 8.0 + theta_fourth / 384.0, vector_scale * omega.x(),
+      vector_scale * omega.y(), vector_scale * omega.z());
+  } else {
+    const Eigen::Vector3d axis = omega / theta;
+    const double sin_half_theta = std::sin(half_theta);
+    quaternion = Eigen::Quaterniond(
+      std::cos(half_theta), sin_half_theta * axis.x(), sin_half_theta * axis.y(),
+      sin_half_theta * axis.z());
   }
-
-  const Eigen::Vector3d axis = omega / theta;
-  const double angle = theta;
-
-  Eigen::Quaterniond q(Eigen::AngleAxisd(angle, axis));
-  return q;
+  quaternion.normalize();
+  return quaternion;
 }
 
 Eigen::Vector3d logMap(const Eigen::Quaterniond & q)
@@ -111,9 +121,22 @@ Eigen::Vector3d logMap(const Eigen::Quaterniond & q)
   }
 
   const Eigen::Vector4d scaled = q.coeffs() / scale;
-  Eigen::AngleAxisd angle_axis(Eigen::Quaterniond(scaled / scaled.norm()));
-  Eigen::Vector3d omega = angle_axis.angle() * angle_axis.axis();
-  return omega;
+  Eigen::Quaterniond normalized(scaled / scaled.norm());
+  Eigen::Index dominant_axis;
+  normalized.vec().cwiseAbs().maxCoeff(&dominant_axis);
+  if (normalized.w() < 0.0 || (normalized.w() == 0.0 && normalized.vec()(dominant_axis) < 0.0)) {
+    normalized.coeffs() *= -1.0;
+  }
+
+  const double sin_half_theta = normalized.vec().stableNorm();
+  if (sin_half_theta < 1e-3) {
+    const double squared = sin_half_theta * sin_half_theta;
+    const double vector_scale = 2.0 + squared / 3.0 + 3.0 * squared * squared / 20.0;
+    return vector_scale * normalized.vec();
+  }
+
+  const double theta = 2.0 * std::atan2(sin_half_theta, normalized.w());
+  return (theta / sin_half_theta) * normalized.vec();
 }
 
 }  // namespace traj_gen
