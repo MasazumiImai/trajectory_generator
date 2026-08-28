@@ -94,13 +94,17 @@ void addConstraint(
   const std::optional<Eigen::Vector3d> & angular_velocity,
   const std::optional<Eigen::Vector3d> & angular_acceleration);
 
-// --- Mathematical utility functions for quaternion calculations ---
-
+/**
+ * @brief Map a finite rotation vector to a unit quaternion.
+ * @throws std::invalid_argument if the rotation vector is not finite.
+ */
 TRAJ_GEN_PUBLIC
-Eigen::Quaterniond expMap(const Eigen::Vector3d & omega);
+Eigen::Quaterniond expMap(const Eigen::Vector3d & rotation_vector);
 
-/** @brief Return the principal rotation vector (norm at most pi) for a
- * quaternion. */
+/**
+ * @brief Return the principal rotation vector (norm at most pi) for a quaternion.
+ * @throws std::invalid_argument if the quaternion is non-finite or zero.
+ */
 TRAJ_GEN_PUBLIC
 Eigen::Vector3d logMap(const Eigen::Quaterniond & q);
 

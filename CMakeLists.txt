@@ -1,17 +1,15 @@
 cmake_minimum_required(VERSION 3.14)
-project(traj_gen VERSION 0.2.0 LANGUAGES CXX)
-
-if(NOT CMAKE_BUILD_TYPE AND NOT CMAKE_CONFIGURATION_TYPES)
-  set(CMAKE_BUILD_TYPE Release CACHE STRING "Choose the build type" FORCE)
-  message(STATUS "traj_gen: CMAKE_BUILD_TYPE not set, defaulting to Release (-O3).")
-endif()
-
-if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-  add_compile_options(-Wall -Wextra -Wpedantic)
-endif()
+project(traj_gen
+  VERSION 0.2.0
+  DESCRIPTION "Trajectory generation library for vectors and SO(3) orientations"
+  HOMEPAGE_URL "https://github.com/MasazumiImai/trajectory_generator"
+  LANGUAGES CXX
+)
 
 # dependencies
-include(CTest)
+if(CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
+  include(CTest)
+endif()
 include(GNUInstallDirs)
 find_package(Eigen3 REQUIRED)
 
@@ -21,6 +19,10 @@ add_library(${PROJECT_NAME} SHARED
   src/spline.cpp
 )
 add_library(${PROJECT_NAME}::${PROJECT_NAME} ALIAS ${PROJECT_NAME})
+
+if(CMAKE_COMPILER_IS_GNUCXX OR CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+  target_compile_options(${PROJECT_NAME} PRIVATE -Wall -Wextra -Wpedantic)
+endif()
 
 # include directory
 target_include_directories(${PROJECT_NAME} PUBLIC
@@ -39,6 +41,8 @@ target_compile_definitions(${PROJECT_NAME}
 set_target_properties(${PROJECT_NAME} PROPERTIES
   VERSION ${PROJECT_VERSION}
   SOVERSION ${PROJECT_VERSION_MAJOR}.${PROJECT_VERSION_MINOR}
+  CXX_VISIBILITY_PRESET hidden
+  VISIBILITY_INLINES_HIDDEN YES
 )
 
 # install header file
@@ -46,7 +50,7 @@ install(DIRECTORY include/
   DESTINATION ${CMAKE_INSTALL_INCLUDEDIR}
 )
 
-install(FILES LICENSE package.xml
+install(FILES LICENSE README.md CHANGELOG.rst package.xml
   DESTINATION ${CMAKE_INSTALL_DATADIR}/${PROJECT_NAME}
 )
 
@@ -96,7 +100,7 @@ install(FILES
 )
 
 # gtest
-if(BUILD_TESTING)
+if(BUILD_TESTING AND CMAKE_SOURCE_DIR STREQUAL PROJECT_SOURCE_DIR)
   find_package(GTest REQUIRED)
 
   add_executable(unit_test_traj_gen
@@ -138,5 +142,18 @@ if(BUILD_TESTING)
   )
   set_tests_properties(traj_gen.install_consumer PROPERTIES
     FIXTURES_REQUIRED traj_gen_installed
+  )
+
+  add_test(NAME traj_gen.add_subdirectory_consumer
+    COMMAND ${CMAKE_CTEST_COMMAND}
+      --build-and-test
+      ${CMAKE_CURRENT_SOURCE_DIR}/test/add_subdirectory_consumer
+      ${CMAKE_CURRENT_BINARY_DIR}/test_add_subdirectory_consumer
+      --build-generator ${CMAKE_GENERATOR}
+      --build-config Debug
+      --build-options
+        -DTRAJ_GEN_SOURCE_DIR=${CMAKE_CURRENT_SOURCE_DIR}
+        -DCMAKE_BUILD_TYPE=Debug
+      --test-command ${CMAKE_CTEST_COMMAND} -C Debug --output-on-failure
   )
 endif()

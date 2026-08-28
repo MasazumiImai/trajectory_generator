@@ -258,6 +258,8 @@ VectorSpline::VectorSpline(const std::vector<VectorStateConstraint> & constraint
   end_position_ = *sorted_constraints.back().position;
   single_point_velocity_ =
     sorted_constraints.front().velocity.value_or(Eigen::VectorXd::Zero(kDof_));
+  single_point_acceleration_ =
+    sorted_constraints.front().acceleration.value_or(Eigen::VectorXd::Zero(kDof_));
 
   knot_times_.reserve(sorted_constraints.size());
   for (const auto & constraint : sorted_constraints) {
@@ -275,7 +277,7 @@ VectorSpline::VectorSpline(const std::vector<VectorStateConstraint> & constraint
   }
 }
 
-Eigen::VectorXd VectorSpline::getPosition(double time)
+Eigen::VectorXd VectorSpline::getPosition(double time) const
 {
   validateQueryTime(time);
   if (time < start_time_) {
@@ -290,7 +292,7 @@ Eigen::VectorXd VectorSpline::getPosition(double time)
   return evaluateSegment(segmentIndex(time), time, 0);
 }
 
-Eigen::VectorXd VectorSpline::getVelocity(double time)
+Eigen::VectorXd VectorSpline::getVelocity(double time) const
 {
   validateQueryTime(time);
   if (time < start_time_ || time > end_time_) {
@@ -300,6 +302,18 @@ Eigen::VectorXd VectorSpline::getVelocity(double time)
     return single_point_velocity_;
   }
   return evaluateSegment(segmentIndex(time), time, 1);
+}
+
+Eigen::VectorXd VectorSpline::getAcceleration(double time) const
+{
+  validateQueryTime(time);
+  if (time < start_time_ || time > end_time_) {
+    return Eigen::VectorXd::Zero(kDof_);
+  }
+  if (segment_coefficients_.empty()) {
+    return single_point_acceleration_;
+  }
+  return evaluateSegment(segmentIndex(time), time, 2);
 }
 
 std::vector<VectorStateConstraint> VectorSpline::validateAndSortConstraints(
@@ -471,6 +485,8 @@ OrientationSpline::OrientationSpline(const std::vector<AngularStateConstraint> &
   end_orientation_ = *sorted_constraints.back().orientation;
   single_point_angular_velocity_ =
     sorted_constraints.front().angular_velocity.value_or(Eigen::Vector3d::Zero());
+  single_point_angular_acceleration_ =
+    sorted_constraints.front().angular_acceleration.value_or(Eigen::Vector3d::Zero());
 
   knot_times_.reserve(sorted_constraints.size());
   knot_orientations_.reserve(sorted_constraints.size());
@@ -486,7 +502,7 @@ OrientationSpline::OrientationSpline(const std::vector<AngularStateConstraint> &
   }
 }
 
-Eigen::Quaterniond OrientationSpline::getOrientation(double time)
+Eigen::Quaterniond OrientationSpline::getOrientation(double time) const
 {
   validateQueryTime(time);
   if (time < start_time_) {
@@ -510,7 +526,7 @@ Eigen::Quaterniond OrientationSpline::getOrientation(double time)
   return normalizedQuaternion(expMap(rotation_vector) * knot_orientations_[segment]);
 }
 
-Eigen::Vector3d OrientationSpline::getAngularVelocity(double time)
+Eigen::Vector3d OrientationSpline::getAngularVelocity(double time) const
 {
   validateQueryTime(time);
   if (time < start_time_ || time > end_time_) {
@@ -524,6 +540,30 @@ Eigen::Vector3d OrientationSpline::getAngularVelocity(double time)
   const Eigen::Vector3d rotation_vector = segment_splines_[segment].getPosition(time);
   const Eigen::Vector3d rotation_vector_velocity = segment_splines_[segment].getVelocity(time);
   return applyLeftJacobian(rotation_vector, rotation_vector_velocity);
+}
+
+Eigen::Vector3d OrientationSpline::getAngularAcceleration(double time) const
+{
+  validateQueryTime(time);
+  if (time < start_time_ || time > end_time_) {
+    return Eigen::Vector3d::Zero();
+  }
+  if (segment_splines_.empty()) {
+    return single_point_angular_acceleration_;
+  }
+
+  const std::size_t segment = segmentIndex(time);
+  const Eigen::Vector3d rotation_vector = segment_splines_[segment].getPosition(time);
+  const Eigen::Vector3d rotation_vector_velocity = segment_splines_[segment].getVelocity(time);
+  const Eigen::Vector3d rotation_vector_acceleration =
+    segment_splines_[segment].getAcceleration(time);
+  const Eigen::Vector3d angular_acceleration =
+    applyLeftJacobian(rotation_vector, rotation_vector_acceleration) +
+    leftJacobianDerivativeTimes(rotation_vector, rotation_vector_velocity);
+  if (!angular_acceleration.allFinite()) {
+    throw std::runtime_error("SO(3) angular-acceleration mapping produced a non-finite value.");
+  }
+  return angular_acceleration;
 }
 
 std::vector<AngularStateConstraint> OrientationSpline::validateAndSortConstraints(

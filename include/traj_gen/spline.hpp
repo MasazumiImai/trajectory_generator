@@ -43,15 +43,27 @@ public:
   explicit VectorSpline(const std::vector<VectorStateConstraint> & constraints, int dof);
   ~VectorSpline() override = default;
 
-  /** @brief Get position, holding the nearest endpoint outside the trajectory interval. */
-  Eigen::VectorXd getPosition(double time) override;
+  /**
+   * @brief Get position, holding the nearest endpoint outside the trajectory interval.
+   * @throws std::invalid_argument if time is not finite.
+   */
+  Eigen::VectorXd getPosition(double time) const override;
 
   /**
    * @brief Get velocity, returning zero outside the trajectory interval.
    *
    * At an internal P-only waypoint, the following segment defines the returned velocity.
+   * @throws std::invalid_argument if time is not finite.
    */
-  Eigen::VectorXd getVelocity(double time) override;
+  Eigen::VectorXd getVelocity(double time) const override;
+
+  /**
+   * @brief Get acceleration, returning zero outside the trajectory interval.
+   *
+   * At an internal waypoint without acceleration, the following segment defines the result.
+   * @throws std::invalid_argument if time is not finite.
+   */
+  Eigen::VectorXd getAcceleration(double time) const override;
 
 private:
   static std::vector<VectorStateConstraint> validateAndSortConstraints(
@@ -72,6 +84,7 @@ private:
   Eigen::VectorXd start_position_;
   Eigen::VectorXd end_position_;
   Eigen::VectorXd single_point_velocity_;
+  Eigen::VectorXd single_point_acceleration_;
 };
 
 /**
@@ -95,13 +108,28 @@ public:
   explicit OrientationSpline(const std::vector<AngularStateConstraint> & constraints);
   ~OrientationSpline() override = default;
 
-  /** @brief Get orientation, holding the nearest endpoint outside the
-   * trajectory interval. */
-  Eigen::Quaterniond getOrientation(double time) override;
+  /**
+   * @brief Get orientation, holding the nearest endpoint outside the trajectory interval.
+   * @throws std::invalid_argument if time is not finite.
+   */
+  Eigen::Quaterniond getOrientation(double time) const override;
 
-  /** @brief Get spatial/world-frame angular velocity, returning zero outside
-   * the interval. */
-  Eigen::Vector3d getAngularVelocity(double time) override;
+  /**
+   * @brief Get spatial/world-frame angular velocity, returning zero outside the interval.
+   *
+   * At an internal orientation-only waypoint, the following segment defines the result.
+   * @throws std::invalid_argument if time is not finite.
+   */
+  Eigen::Vector3d getAngularVelocity(double time) const override;
+
+  /**
+   * @brief Get spatial/world-frame angular acceleration, returning zero outside the interval.
+   *
+   * At an internal waypoint without angular acceleration, the following segment defines the
+   * result.
+   * @throws std::invalid_argument if time is not finite.
+   */
+  Eigen::Vector3d getAngularAcceleration(double time) const override;
 
 private:
   static std::vector<AngularStateConstraint> validateAndSortConstraints(
@@ -120,6 +148,7 @@ private:
   double start_time_;
   double end_time_;
   Eigen::Vector3d single_point_angular_velocity_;
+  Eigen::Vector3d single_point_angular_acceleration_;
 };
 
 }  // namespace traj_gen

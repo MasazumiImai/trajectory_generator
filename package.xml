@@ -6,6 +6,7 @@
   <description>Trajectory generation library (C++ / ROS 2 compatible)</description>
   <maintainer email="imai.masazumi.p2@dc.tohoku.ac.jp">Masazumi Imai</maintainer>
   <license>Apache-2.0</license>
+  <url type="repository">https://github.com/MasazumiImai/trajectory_generator</url>
 
   <buildtool_depend>cmake</buildtool_depend>
 
