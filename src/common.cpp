@@ -79,13 +79,13 @@ void addConstraint(
   constraints.push_back(new_constraint);
 }
 
-Eigen::Quaterniond expMap(const Eigen::Vector3d & omega)
+Eigen::Quaterniond expMap(const Eigen::Vector3d & rotation_vector)
 {
-  if (!omega.allFinite()) {
+  if (!rotation_vector.allFinite()) {
     throw std::invalid_argument("Rotation vector must contain only finite values.");
   }
 
-  const double theta = omega.stableNorm();
+  const double theta = rotation_vector.stableNorm();
   if (!std::isfinite(theta)) {
     throw std::invalid_argument("Rotation vector norm must be finite.");
   }
@@ -97,10 +97,10 @@ Eigen::Quaterniond expMap(const Eigen::Vector3d & omega)
     const double theta_fourth = theta_squared * theta_squared;
     const double vector_scale = 0.5 - theta_squared / 48.0 + theta_fourth / 3840.0;
     quaternion = Eigen::Quaterniond(
-      1.0 - theta_squared / 8.0 + theta_fourth / 384.0, vector_scale * omega.x(),
-      vector_scale * omega.y(), vector_scale * omega.z());
+      1.0 - theta_squared / 8.0 + theta_fourth / 384.0, vector_scale * rotation_vector.x(),
+      vector_scale * rotation_vector.y(), vector_scale * rotation_vector.z());
   } else {
-    const Eigen::Vector3d axis = omega / theta;
+    const Eigen::Vector3d axis = rotation_vector / theta;
     const double sin_half_theta = std::sin(half_theta);
     quaternion = Eigen::Quaterniond(
       std::cos(half_theta), sin_half_theta * axis.x(), sin_half_theta * axis.y(),
