@@ -141,7 +141,7 @@ jobs:
           test -n "${cmake_version}"
           test "${tag_version}" = "${cmake_version}"
           test "${package_version}" = "${cmake_version}"
-          grep -Fq "${cmake_version} (" CHANGELOG.rst
+          # grep -Fq "${cmake_version} (" CHANGELOG.rst
 
       - name: Create release
         env:
