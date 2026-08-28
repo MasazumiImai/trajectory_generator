@@ -15,9 +15,7 @@ AlignAfterOpenBracket: AlwaysBreak
 AlignOperands: DontAlign
 
 # Do not align trailing comments
-AlignTrailingComments:
-  Kind: Never
-  OverEmptyLines: 0
+AlignTrailingComments: false
 
 # Allows short functions to remain on a single line only if they are inline
 AllowShortFunctionsOnASingleLine: InlineOnly
@@ -34,7 +32,7 @@ BraceWrapping:
 BreakBeforeBraces: Custom
 
 # Break constructor initializers before the colon and after the commas
-BreakConstructorInitializers: BeforeColon # Dose not work currently
+BreakConstructorInitializers: BeforeColon
 
 # Overwrite column max length
 ColumnLimit: 100
@@ -49,9 +47,6 @@ ContinuationIndentWidth: 2
 DerivePointerAlignment: false
 # Aligns pointers in the middle
 PointerAlignment: Middle
-
-# Formatting off for one line
-OneLineFormatOffRegex: ^(// NOLINT|logger$)
 
 # Disables automatic reformatting of comments
 ReflowComments: false
