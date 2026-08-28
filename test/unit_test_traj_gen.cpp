@@ -61,7 +61,7 @@ double orientationError(const Eigen::Quaterniond & actual, const Eigen::Quaterni
 }
 
 Eigen::Vector3d finiteDifferenceSpatialAngularVelocity(
-  OrientationSpline & spline, double time, double step)
+  const OrientationSpline & spline, double time, double step)
 {
   const Eigen::Quaterniond relative =
     spline.getOrientation(time + step) * spline.getOrientation(time - step).conjugate();
@@ -248,6 +248,7 @@ TEST(TrajectoryGenerator, OrientationSplineIsInvariantToAbsoluteTimeOffset)
 
   AngularStateConstraint single = orientationWaypoint(base_time, Eigen::Quaterniond::Identity());
   single.angular_velocity = Eigen::Vector3d(1.0, 2.0, 3.0);
+  single.angular_acceleration = Eigen::Vector3d(-1.0, -2.0, -3.0);
   OrientationSpline single_point({single});
   EXPECT_TRUE(
     single_point.getOrientation(base_time - 1.0).isApprox(Eigen::Quaterniond::Identity()));
@@ -256,6 +257,9 @@ TEST(TrajectoryGenerator, OrientationSplineIsInvariantToAbsoluteTimeOffset)
   EXPECT_EQ(single_point.getAngularVelocity(base_time), *single.angular_velocity);
   EXPECT_TRUE(single_point.getAngularVelocity(base_time - 1.0).isZero());
   EXPECT_TRUE(single_point.getAngularVelocity(base_time + 1.0).isZero());
+  EXPECT_EQ(single_point.getAngularAcceleration(base_time), *single.angular_acceleration);
+  EXPECT_TRUE(single_point.getAngularAcceleration(base_time - 1.0).isZero());
+  EXPECT_TRUE(single_point.getAngularAcceleration(base_time + 1.0).isZero());
 }
 
 TEST(TrajectoryGenerator, OrientationSplineUsesAdjacentShortestArcs)
@@ -353,6 +357,10 @@ TEST(TrajectoryGenerator, OrientationSplineMapsSpatialAngularAcceleration)
     orientationError(spline.getOrientation(0.5), expMap(mid_rotation_vector) * start_orientation),
     0.0, 2e-12);
   EXPECT_NEAR((spline.getAngularVelocity(0.5) - expected_mid_velocity).norm(), 0.0, 2e-12);
+  EXPECT_NEAR((spline.getAngularAcceleration(0.5) - expected_mid_acceleration).norm(), 0.0, 2e-12);
+  EXPECT_NEAR(
+    (spline.getAngularAcceleration(0.0) - *start.angular_acceleration).norm(), 0.0, 2e-12);
+  EXPECT_NEAR((spline.getAngularAcceleration(1.0) - *end.angular_acceleration).norm(), 0.0, 2e-12);
 
   constexpr double step = 1e-4;
   const Eigen::Vector3d mid_acceleration =
@@ -368,6 +376,24 @@ TEST(TrajectoryGenerator, OrientationSplineMapsSpatialAngularAcceleration)
   EXPECT_NEAR((mid_acceleration - expected_mid_acceleration).norm(), 0.0, 2e-5);
   EXPECT_NEAR((start_acceleration - *start.angular_acceleration).norm(), 0.0, 2e-5);
   EXPECT_NEAR((end_acceleration - *end.angular_acceleration).norm(), 0.0, 2e-5);
+
+  AngularStateConstraint first = orientationWaypoint(0.0, Eigen::Quaterniond::Identity());
+  first.angular_velocity = Eigen::Vector3d::Zero();
+  AngularStateConstraint knot = orientationWaypoint(1.0, zRotation(0.4));
+  knot.angular_velocity = Eigen::Vector3d(0.0, 0.0, 0.1);
+  AngularStateConstraint last = orientationWaypoint(2.0, zRotation(1.0));
+  last.angular_velocity = Eigen::Vector3d(0.0, 0.0, -0.2);
+  const OrientationSpline piecewise({first, knot, last});
+  const OrientationSpline left_segment({first, knot});
+  const OrientationSpline right_segment({knot, last});
+  EXPECT_NEAR(
+    (piecewise.getAngularAcceleration(knot.time) - right_segment.getAngularAcceleration(knot.time))
+      .norm(),
+    0.0, 1e-12);
+  EXPECT_GT(
+    (piecewise.getAngularAcceleration(knot.time) - left_segment.getAngularAcceleration(knot.time))
+      .norm(),
+    1.0);
 }
 
 TEST(TrajectoryGenerator, VectorSplineRejectsInvalidWaypoints)
@@ -464,11 +490,13 @@ TEST(TrajectoryGenerator, VectorSplineSupportsEveryEndpointConstraintCombination
       }
       constexpr double delta = 1e-6;
       if (start.acceleration) {
+        EXPECT_NEAR(spline.getAcceleration(start.time)(0), 0.75, 1e-10);
         const double actual =
           (spline.getVelocity(start.time + delta)(0) - spline.getVelocity(start.time)(0)) / delta;
         EXPECT_NEAR(actual, 0.75, 1e-4);
       }
       if (end.acceleration) {
+        EXPECT_NEAR(spline.getAcceleration(end.time)(0), -1.0, 1e-10);
         const double actual =
           (spline.getVelocity(end.time)(0) - spline.getVelocity(end.time - delta)(0)) / delta;
         EXPECT_NEAR(actual, -1.0, 1e-4);
@@ -583,6 +611,9 @@ TEST(TrajectoryGenerator, VectorSplineDefinesKnotContinuityAndSinglePointBehavio
   EXPECT_DOUBLE_EQ(single_point.getVelocity(5.0)(0), 3.0);
   EXPECT_DOUBLE_EQ(single_point.getVelocity(5.0 - 1e-12)(0), 0.0);
   EXPECT_DOUBLE_EQ(single_point.getVelocity(5.0 + 1e-12)(0), 0.0);
+  EXPECT_DOUBLE_EQ(single_point.getAcceleration(5.0)(0), -2.0);
+  EXPECT_DOUBLE_EQ(single_point.getAcceleration(5.0 - 1e-12)(0), 0.0);
+  EXPECT_DOUBLE_EQ(single_point.getAcceleration(5.0 + 1e-12)(0), 0.0);
 }
 
 TEST(TrajectoryGenerator, VectorSplineHoldsEndpointsAndRejectsInvalidQueries)
@@ -597,11 +628,15 @@ TEST(TrajectoryGenerator, VectorSplineHoldsEndpointsAndRejectsInvalidQueries)
   EXPECT_DOUBLE_EQ(spline.getPosition(2.0)(0), 3.0);
   EXPECT_DOUBLE_EQ(spline.getVelocity(-1.0)(0), 0.0);
   EXPECT_DOUBLE_EQ(spline.getVelocity(2.0)(0), 0.0);
+  EXPECT_DOUBLE_EQ(spline.getAcceleration(-1.0)(0), 0.0);
+  EXPECT_DOUBLE_EQ(spline.getAcceleration(2.0)(0), 0.0);
   EXPECT_NEAR(spline.getVelocity(0.0)(0), 2.0, 1e-12);
   EXPECT_NEAR(spline.getVelocity(1.0)(0), -2.0, 1e-12);
 
   EXPECT_THROW(spline.getPosition(std::numeric_limits<double>::quiet_NaN()), std::invalid_argument);
   EXPECT_THROW(spline.getVelocity(std::numeric_limits<double>::infinity()), std::invalid_argument);
+  EXPECT_THROW(
+    spline.getAcceleration(-std::numeric_limits<double>::infinity()), std::invalid_argument);
 }
 
 TEST(TrajectoryGenerator, OrientationSplineRejectsInvalidWaypoints)
@@ -650,11 +685,15 @@ TEST(TrajectoryGenerator, OrientationSplineNormalizesAndHoldsEndpoints)
   EXPECT_NEAR(std::abs(after.dot(end_orientation.normalized())), 1.0, 1e-12);
   EXPECT_TRUE(spline.getAngularVelocity(-1.0).isZero(0.0));
   EXPECT_TRUE(spline.getAngularVelocity(2.0).isZero(0.0));
+  EXPECT_TRUE(spline.getAngularAcceleration(-1.0).isZero(0.0));
+  EXPECT_TRUE(spline.getAngularAcceleration(2.0).isZero(0.0));
 
   EXPECT_THROW(
     spline.getOrientation(std::numeric_limits<double>::quiet_NaN()), std::invalid_argument);
   EXPECT_THROW(
     spline.getAngularVelocity(-std::numeric_limits<double>::infinity()), std::invalid_argument);
+  EXPECT_THROW(
+    spline.getAngularAcceleration(std::numeric_limits<double>::infinity()), std::invalid_argument);
 }
 
 TEST(TrajectoryGenerator, RotationMapsRejectInvalidInputs)
@@ -671,8 +710,7 @@ TEST(TrajectoryGenerator, RotationMapsRejectInvalidInputs)
   const Eigen::Quaterniond scaled(2.0, 0.0, 0.0, 0.0);
   EXPECT_TRUE(logMap(scaled).isZero(0.0));
 
-  const Eigen::Quaterniond huge_scaled(
-    std::numeric_limits<double>::max(), 0.0, 0.0, 0.0);
+  const Eigen::Quaterniond huge_scaled(std::numeric_limits<double>::max(), 0.0, 0.0, 0.0);
   EXPECT_TRUE(logMap(huge_scaled).isZero(0.0));
   OrientationSpline normalized_spline({orientationWaypoint(0.0, huge_scaled)});
   EXPECT_TRUE(normalized_spline.getOrientation(0.0).isApprox(Eigen::Quaterniond::Identity()));
