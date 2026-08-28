@@ -14,6 +14,9 @@
 
 #include "traj_gen/common.hpp"
 
+#include <cmath>
+#include <stdexcept>
+
 namespace traj_gen
 {
 
@@ -78,12 +81,19 @@ void addConstraint(
 
 Eigen::Quaterniond expMap(const Eigen::Vector3d & omega)
 {
-  const double theta = omega.norm();
+  if (!omega.allFinite()) {
+    throw std::invalid_argument("Rotation vector must contain only finite values.");
+  }
+
+  const double theta = omega.stableNorm();
+  if (!std::isfinite(theta)) {
+    throw std::invalid_argument("Rotation vector norm must be finite.");
+  }
   if (theta < 1e-9) {
     return Eigen::Quaterniond::Identity();
   }
 
-  const Eigen::Vector3d axis = omega.normalized();
+  const Eigen::Vector3d axis = omega / theta;
   const double angle = theta;
 
   Eigen::Quaterniond q(Eigen::AngleAxisd(angle, axis));
@@ -92,7 +102,16 @@ Eigen::Quaterniond expMap(const Eigen::Vector3d & omega)
 
 Eigen::Vector3d logMap(const Eigen::Quaterniond & q)
 {
-  Eigen::AngleAxisd angle_axis(q);
+  if (!q.coeffs().allFinite()) {
+    throw std::invalid_argument("Quaternion must contain only finite values.");
+  }
+  const double scale = q.coeffs().cwiseAbs().maxCoeff();
+  if (scale == 0.0) {
+    throw std::invalid_argument("Quaternion must be non-zero.");
+  }
+
+  const Eigen::Vector4d scaled = q.coeffs() / scale;
+  Eigen::AngleAxisd angle_axis(Eigen::Quaterniond(scaled / scaled.norm()));
   Eigen::Vector3d omega = angle_axis.angle() * angle_axis.axis();
   return omega;
 }

@@ -32,24 +32,33 @@ namespace traj_gen
 class TRAJ_GEN_PUBLIC VectorSpline : public VectorTrajectoryBase
 {
 public:
+  /**
+   * @brief Build a vector trajectory from finite, uniquely timed P/PV/PVA waypoints.
+   * @throws std::invalid_argument for malformed waypoints or a non-positive dof.
+   * @throws std::runtime_error when the constraints cannot be solved accurately.
+   */
   explicit VectorSpline(const std::vector<VectorStateConstraint> & constraints, int dof);
   ~VectorSpline() override = default;
 
-  /** @brief Get position vector at specified time. */
+  /** @brief Get position, holding the nearest endpoint outside the trajectory interval. */
   Eigen::VectorXd getPosition(double time) override;
 
-  /** @brief Get velocity vector at specified time. */
+  /** @brief Get velocity, returning zero outside the trajectory interval. */
   Eigen::VectorXd getVelocity(double time) override;
 
 private:
   static std::map<double, std::map<int, Eigen::VectorXd>> constraintsToMap(
-    const std::vector<VectorStateConstraint> & constraints);
+    const std::vector<VectorStateConstraint> & constraints, int dof);
 
   static Eigen::MatrixXd solveSplineCoefficients(
     const std::map<double, std::map<int, Eigen::VectorXd>> & constraints_map, int dof);
 
   const int kDof_;  // Degree of freedom for trajectory (number of order)
   Eigen::MatrixXd coefficients_;  // Spline coefficients
+  double start_time_;
+  double end_time_;
+  Eigen::VectorXd start_position_;
+  Eigen::VectorXd end_position_;
 };
 
 /**
@@ -58,13 +67,20 @@ private:
 class TRAJ_GEN_PUBLIC OrientationSpline : public OrientationTrajectoryBase
 {
 public:
+  /**
+   * @brief Build an orientation trajectory from finite, uniquely timed Q/QV/QVA waypoints.
+   *
+   * Input quaternions must be non-zero and are normalized internally.
+   * @throws std::invalid_argument for malformed waypoints.
+   * @throws std::runtime_error when the constraints cannot be solved accurately.
+   */
   explicit OrientationSpline(const std::vector<AngularStateConstraint> & constraints);
   ~OrientationSpline() override = default;
 
-  /** @brief Get orientation (quaternion) at specified time. */
+  /** @brief Get orientation, holding the nearest endpoint outside the trajectory interval. */
   Eigen::Quaterniond getOrientation(double time) override;
 
-  /** @brief Get angular velocity vector at specified time. */
+  /** @brief Get angular velocity, returning zero outside the trajectory interval. */
   Eigen::Vector3d getAngularVelocity(double time) override;
 
 private:
@@ -73,6 +89,9 @@ private:
 
   VectorSpline vector_spline_;  // Use VectorSpline internally to interpolate rotation vectors.
   Eigen::Quaterniond start_orientation_;  // Reference starting orientation
+  Eigen::Quaterniond end_orientation_;
+  double start_time_;
+  double end_time_;
 };
 
 }  // namespace traj_gen

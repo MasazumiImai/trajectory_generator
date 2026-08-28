@@ -16,6 +16,7 @@
 #define TRAJ_GEN__COMMON_HPP_
 
 #include <Eigen/Dense>
+#include <limits>
 #include <optional>
 #include <vector>
 
@@ -29,7 +30,7 @@ namespace traj_gen
  */
 struct VectorStateConstraint
 {
-  double time;  // [s]
+  double time{std::numeric_limits<double>::quiet_NaN()};  // [s]
   std::optional<Eigen::VectorXd> position;
   std::optional<Eigen::VectorXd> velocity;
   std::optional<Eigen::VectorXd> acceleration;
@@ -63,7 +64,7 @@ void addConstraint(
  */
 struct AngularStateConstraint
 {
-  double time;  // [s]
+  double time{std::numeric_limits<double>::quiet_NaN()};  // [s]
   std::optional<Eigen::Quaterniond> orientation;
   std::optional<Eigen::Vector3d> angular_velocity;
   std::optional<Eigen::Vector3d> angular_acceleration;

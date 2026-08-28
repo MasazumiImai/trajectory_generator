@@ -14,12 +14,36 @@
 
 #include <gtest/gtest.h>
 
+#include <iomanip>
 #include <iostream>
+#include <limits>
 
 #include "traj_gen/spline.hpp"
 
 namespace traj_gen
 {
+namespace
+{
+
+constexpr double kPi = 3.14159265358979323846;
+
+VectorStateConstraint scalarWaypoint(double time, double position)
+{
+  VectorStateConstraint constraint;
+  constraint.time = time;
+  constraint.position = Eigen::VectorXd::Constant(1, position);
+  return constraint;
+}
+
+AngularStateConstraint orientationWaypoint(double time, const Eigen::Quaterniond & orientation)
+{
+  AngularStateConstraint constraint;
+  constraint.time = time;
+  constraint.orientation = orientation;
+  return constraint;
+}
+
+}  // namespace
 
 TEST(TrajectoryGenerator, VectorSplineTaskSpace)
 {
@@ -139,7 +163,7 @@ TEST(TrajectoryGenerator, OrientationSpline)
 
   AngularStateConstraint start_constraint;
   start_constraint.time = start_time;
-  Eigen::Vector3d start_rpy(0.0, M_PI_2, M_PI);
+  Eigen::Vector3d start_rpy(0.0, kPi / 2.0, kPi);
   start_constraint.orientation = Eigen::AngleAxisd(start_rpy.z(), Eigen::Vector3d::UnitZ()) *
     Eigen::AngleAxisd(start_rpy.y(), Eigen::Vector3d::UnitY()) *
     Eigen::AngleAxisd(start_rpy.x(), Eigen::Vector3d::UnitX());
@@ -147,7 +171,7 @@ TEST(TrajectoryGenerator, OrientationSpline)
 
   AngularStateConstraint end_constraint;
   end_constraint.time = end_time;
-  Eigen::Vector3d end_rpy(0.0, 0.0, M_PI);
+  Eigen::Vector3d end_rpy(0.0, 0.0, kPi);
   end_constraint.orientation = Eigen::AngleAxisd(end_rpy.z(), Eigen::Vector3d::UnitZ()) *
     Eigen::AngleAxisd(end_rpy.y(), Eigen::Vector3d::UnitY()) *
     Eigen::AngleAxisd(end_rpy.x(), Eigen::Vector3d::UnitX());
@@ -167,6 +191,148 @@ TEST(TrajectoryGenerator, OrientationSpline)
   for (int i = 0; i < 3; ++i) {
     EXPECT_NEAR((*start_constraint.angular_velocity)(i), actual_start_vel(i), threshold);
   }
+}
+
+TEST(TrajectoryGenerator, VectorSplineRejectsInvalidWaypoints)
+{
+  const VectorStateConstraint valid = scalarWaypoint(0.0, 0.0);
+  EXPECT_THROW((VectorSpline({}, 1)), std::invalid_argument);
+  EXPECT_THROW((VectorSpline({valid}, 0)), std::invalid_argument);
+
+  VectorStateConstraint missing_position;
+  missing_position.time = 0.0;
+  EXPECT_THROW((VectorSpline({missing_position}, 1)), std::invalid_argument);
+
+  VectorStateConstraint missing_velocity = valid;
+  missing_velocity.acceleration = Eigen::VectorXd::Zero(1);
+  EXPECT_THROW((VectorSpline({missing_velocity}, 1)), std::invalid_argument);
+
+  VectorStateConstraint wrong_size = valid;
+  wrong_size.position = Eigen::VectorXd::Zero(2);
+  EXPECT_THROW((VectorSpline({wrong_size}, 1)), std::invalid_argument);
+
+  VectorStateConstraint non_finite_time = valid;
+  non_finite_time.time = std::numeric_limits<double>::quiet_NaN();
+  EXPECT_THROW((VectorSpline({non_finite_time}, 1)), std::invalid_argument);
+
+  VectorStateConstraint non_finite_value = valid;
+  (*non_finite_value.position)(0) = std::numeric_limits<double>::infinity();
+  EXPECT_THROW((VectorSpline({non_finite_value}, 1)), std::invalid_argument);
+
+  VectorStateConstraint duplicate = valid;
+  duplicate.time = -0.0;
+  EXPECT_THROW((VectorSpline({valid, duplicate}, 1)), std::invalid_argument);
+}
+
+TEST(TrajectoryGenerator, VectorSplineRejectsNumericallyUnsafeConstraints)
+{
+  const VectorStateConstraint start = scalarWaypoint(0.0, 0.0);
+  const VectorStateConstraint indistinguishable =
+    scalarWaypoint(std::numeric_limits<double>::denorm_min(), 1.0);
+  EXPECT_THROW((VectorSpline({start, indistinguishable}, 1)), std::runtime_error);
+
+  VectorStateConstraint absolute_start = scalarWaypoint(1e9, 0.0);
+  absolute_start.velocity = Eigen::VectorXd::Zero(1);
+  VectorStateConstraint absolute_end = scalarWaypoint(1e9 + 1.0, 1.0);
+  absolute_end.velocity = Eigen::VectorXd::Zero(1);
+  EXPECT_THROW((VectorSpline({absolute_start, absolute_end}, 1)), std::runtime_error);
+}
+
+TEST(TrajectoryGenerator, VectorSplineHoldsEndpointsAndRejectsInvalidQueries)
+{
+  VectorStateConstraint start = scalarWaypoint(0.0, 1.0);
+  start.velocity = Eigen::VectorXd::Constant(1, 2.0);
+  VectorStateConstraint end = scalarWaypoint(1.0, 3.0);
+  end.velocity = Eigen::VectorXd::Constant(1, -2.0);
+  VectorSpline spline({end, start}, 1);
+
+  EXPECT_DOUBLE_EQ(spline.getPosition(-1.0)(0), 1.0);
+  EXPECT_DOUBLE_EQ(spline.getPosition(2.0)(0), 3.0);
+  EXPECT_DOUBLE_EQ(spline.getVelocity(-1.0)(0), 0.0);
+  EXPECT_DOUBLE_EQ(spline.getVelocity(2.0)(0), 0.0);
+  EXPECT_DOUBLE_EQ(spline.getVelocity(0.0)(0), 2.0);
+  EXPECT_DOUBLE_EQ(spline.getVelocity(1.0)(0), -2.0);
+
+  EXPECT_THROW(spline.getPosition(std::numeric_limits<double>::quiet_NaN()), std::invalid_argument);
+  EXPECT_THROW(spline.getVelocity(std::numeric_limits<double>::infinity()), std::invalid_argument);
+}
+
+TEST(TrajectoryGenerator, OrientationSplineRejectsInvalidWaypoints)
+{
+  const AngularStateConstraint valid = orientationWaypoint(0.0, Eigen::Quaterniond::Identity());
+  EXPECT_THROW((OrientationSpline({})), std::invalid_argument);
+
+  AngularStateConstraint missing_orientation;
+  missing_orientation.time = 0.0;
+  EXPECT_THROW((OrientationSpline({missing_orientation})), std::invalid_argument);
+
+  AngularStateConstraint missing_velocity = valid;
+  missing_velocity.angular_acceleration = Eigen::Vector3d::Zero();
+  EXPECT_THROW((OrientationSpline({missing_velocity})), std::invalid_argument);
+
+  AngularStateConstraint zero_quaternion = orientationWaypoint(0.0, Eigen::Quaterniond(0, 0, 0, 0));
+  EXPECT_THROW((OrientationSpline({zero_quaternion})), std::invalid_argument);
+
+  AngularStateConstraint non_finite_quaternion = valid;
+  non_finite_quaternion.orientation->coeffs()(0) = std::numeric_limits<double>::infinity();
+  EXPECT_THROW((OrientationSpline({non_finite_quaternion})), std::invalid_argument);
+
+  AngularStateConstraint non_finite_velocity = valid;
+  non_finite_velocity.angular_velocity =
+    Eigen::Vector3d(std::numeric_limits<double>::quiet_NaN(), 0.0, 0.0);
+  EXPECT_THROW((OrientationSpline({non_finite_velocity})), std::invalid_argument);
+
+  AngularStateConstraint duplicate = valid;
+  EXPECT_THROW((OrientationSpline({valid, duplicate})), std::invalid_argument);
+}
+
+TEST(TrajectoryGenerator, OrientationSplineNormalizesAndHoldsEndpoints)
+{
+  const Eigen::Quaterniond start_orientation(2.0, 0.0, 0.0, 0.0);
+  const Eigen::Quaterniond end_orientation(
+    2.0 * std::cos(kPi / 4.0), 0.0, 0.0, 2.0 * std::sin(kPi / 4.0));
+  const AngularStateConstraint start = orientationWaypoint(0.0, start_orientation);
+  const AngularStateConstraint end = orientationWaypoint(1.0, end_orientation);
+  OrientationSpline spline({end, start});
+
+  const Eigen::Quaterniond before = spline.getOrientation(-1.0);
+  const Eigen::Quaterniond after = spline.getOrientation(2.0);
+  EXPECT_DOUBLE_EQ(before.norm(), 1.0);
+  EXPECT_DOUBLE_EQ(after.norm(), 1.0);
+  EXPECT_NEAR(std::abs(before.dot(start_orientation.normalized())), 1.0, 1e-12);
+  EXPECT_NEAR(std::abs(after.dot(end_orientation.normalized())), 1.0, 1e-12);
+  EXPECT_TRUE(spline.getAngularVelocity(-1.0).isZero(0.0));
+  EXPECT_TRUE(spline.getAngularVelocity(2.0).isZero(0.0));
+
+  EXPECT_THROW(
+    spline.getOrientation(std::numeric_limits<double>::quiet_NaN()), std::invalid_argument);
+  EXPECT_THROW(
+    spline.getAngularVelocity(-std::numeric_limits<double>::infinity()), std::invalid_argument);
+}
+
+TEST(TrajectoryGenerator, RotationMapsRejectInvalidInputs)
+{
+  EXPECT_THROW(
+    expMap(Eigen::Vector3d(std::numeric_limits<double>::infinity(), 0.0, 0.0)),
+    std::invalid_argument);
+  EXPECT_THROW(logMap(Eigen::Quaterniond(0.0, 0.0, 0.0, 0.0)), std::invalid_argument);
+
+  Eigen::Quaterniond non_finite = Eigen::Quaterniond::Identity();
+  non_finite.coeffs()(0) = std::numeric_limits<double>::quiet_NaN();
+  EXPECT_THROW(logMap(non_finite), std::invalid_argument);
+
+  const Eigen::Quaterniond scaled(2.0, 0.0, 0.0, 0.0);
+  EXPECT_TRUE(logMap(scaled).isZero(0.0));
+
+  const Eigen::Quaterniond huge_scaled(
+    std::numeric_limits<double>::max(), 0.0, 0.0, 0.0);
+  EXPECT_TRUE(logMap(huge_scaled).isZero(0.0));
+  OrientationSpline normalized_spline({orientationWaypoint(0.0, huge_scaled)});
+  EXPECT_TRUE(normalized_spline.getOrientation(0.0).isApprox(Eigen::Quaterniond::Identity()));
+
+  const Eigen::Quaterniond huge_rotation = expMap(Eigen::Vector3d(1e200, 1e200, 0.0));
+  EXPECT_TRUE(huge_rotation.coeffs().allFinite());
+  EXPECT_NEAR(huge_rotation.norm(), 1.0, 1e-12);
 }
 
 }  // namespace traj_gen
