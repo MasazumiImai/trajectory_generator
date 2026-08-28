@@ -20,6 +20,8 @@ This package can be used as a standalone C++ library or from a ROS 2 (`colcon`) 
   position and velocity, or position, velocity, and acceleration.
 * Every orientation waypoint must contain a finite, non-zero quaternion. Quaternions are
   normalized internally; angular acceleration requires angular velocity at the same waypoint.
+  Angular velocity and acceleration are spatial/world-frame values, following
+  `q_dot = 0.5 * [0, omega] * q`.
 * Waypoint times and state values must be finite, times must be unique, and vector dimensions
   must match the configured degrees of freedom.
 * Each adjacent waypoint pair is interpolated independently in normalized local time with the
@@ -27,6 +29,12 @@ This package can be used as a standalone C++ library or from a ROS 2 (`colcon`) 
   at internal waypoints, velocity and acceleration continuity is guaranteed only when those
   derivatives are specified. Missing derivatives are not guessed or treated as zero. At an internal
   waypoint without velocity, an exact-time query uses the following segment's velocity.
+* Each orientation segment uses `q(t) = Exp(phi(t)) * q_i` and the principal logarithm of the
+  adjacent relative quaternion, so the selected endpoint-to-endpoint rotation is at most pi.
+  Quaternion waypoints alone cannot encode intentional extra turns beyond pi. At an exact pi tie
+  (a zero scalar quaternion component after normalization), the dominant rotation-axis component
+  is chosen positive. Explicit derivative constraints may still make the polynomial path overshoot
+  the principal rotation.
 * Queries outside the trajectory interval hold the nearest endpoint position or orientation and
   return zero velocity.
 * Segments whose duration, constraints, coefficients, or evaluation cannot be represented safely
