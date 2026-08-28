@@ -1,20 +1,94 @@
-name: ROS 2 CI
+name: CI
 
 on:
   push:
-    branches: "main"
+    branches: [main]
+    tags: ["v*"]
   pull_request:
-    branches: "main"
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
 
 jobs:
-  build-and-test:
+  standalone:
+    name: Standalone CMake
     runs-on: ubuntu-22.04
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends libeigen3-dev libgtest-dev ninja-build
+
+      - name: Configure
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DBUILD_TESTING=ON
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: ctest --test-dir build --output-on-failure --no-tests=error
+
+  sanitizers:
+    name: ASan and UBSan
+    runs-on: ubuntu-22.04
+    timeout-minutes: 10
+    env:
+      ASAN_OPTIONS: detect_leaks=0:halt_on_error=1
+      UBSAN_OPTIONS: halt_on_error=1:print_stacktrace=1
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Install dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends clang libeigen3-dev libgtest-dev ninja-build
+
+      - name: Configure
+        run: |
+          cmake -S . -B build -G Ninja \
+            -DCMAKE_BUILD_TYPE=Debug \
+            -DCMAKE_CXX_COMPILER=clang++ \
+            '-DCMAKE_CXX_FLAGS=-fsanitize=address,undefined -fno-omit-frame-pointer' \
+            -DBUILD_TESTING=ON
+
+      - name: Build
+        run: cmake --build build --parallel
+
+      - name: Test
+        run: >-
+          ctest --test-dir build --output-on-failure --no-tests=error
+          -E '^traj_gen\.'
+
+  ros2-humble:
+    name: ROS 2 Humble
+    runs-on: ubuntu-22.04
+    timeout-minutes: 20
     container:
-      image: ros:humble
+      image: ros:humble-ros-base-jammy
+      env:
+        DEBIAN_FRONTEND: noninteractive
 
     steps:
       - name: Install tools
-        run: apt-get update && apt-get install -y git
+        run: |
+          apt-get update
+          apt-get install -y --no-install-recommends git python3-colcon-common-extensions
 
       - name: Checkout repository
         uses: actions/checkout@v4
@@ -23,18 +97,57 @@ jobs:
 
       - name: Install dependencies
         run: |
-          apt-get update
-          apt-get install -y python3-colcon-common-extensions
           rosdep update
-          rosdep install --from-paths src --ignore-src -y
+          rosdep install \
+            --from-paths src/trajectory_generator \
+            --ignore-src \
+            --rosdistro humble \
+            -y
 
       - name: Build package
         run: |
           . /opt/ros/humble/setup.sh
-          colcon build --packages-select traj_gen --cmake-args -DBUILD_TESTING=ON
+          colcon build \
+            --packages-select traj_gen \
+            --cmake-args -DBUILD_TESTING=ON -DCMAKE_BUILD_TYPE=Release
 
-      - name: Run tests
+      - name: Test and verify discovery
         run: |
           . /opt/ros/humble/setup.sh
-          colcon test --packages-select traj_gen
-          colcon test-result --all
+          colcon test --packages-select traj_gen --event-handlers console_direct+
+          colcon test-result --verbose
+          . install/setup.sh
+          ros2 pkg prefix traj_gen
+
+  release:
+    name: GitHub Release
+    if: startsWith(github.ref, 'refs/tags/v')
+    needs: [standalone, sanitizers, ros2-humble]
+    runs-on: ubuntu-22.04
+    timeout-minutes: 5
+    permissions:
+      contents: write
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Verify release version
+        shell: bash
+        run: |
+          tag_version="${GITHUB_REF_NAME#v}"
+          cmake_version="$(sed -nE 's/^  VERSION ([0-9]+\.[0-9]+\.[0-9]+)$/\1/p' CMakeLists.txt)"
+          package_version="$(sed -nE 's|^  <version>([^<]+)</version>$|\1|p' package.xml)"
+          test -n "${cmake_version}"
+          test "${tag_version}" = "${cmake_version}"
+          test "${package_version}" = "${cmake_version}"
+          # grep -Fq "${cmake_version} (" CHANGELOG.rst
+
+      - name: Create release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: >-
+          gh release create "${GITHUB_REF_NAME}"
+          --verify-tag
+          --generate-notes
+          --title "traj_gen ${GITHUB_REF_NAME}"

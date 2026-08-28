@@ -16,7 +16,7 @@
 #define TRAJ_GEN__SPLINE_HPP_
 
 #include <Eigen/Dense>
-#include <map>
+#include <cstddef>
 #include <vector>
 
 #include "traj_gen/base.hpp"
@@ -32,24 +32,59 @@ namespace traj_gen
 class TRAJ_GEN_PUBLIC VectorSpline : public VectorTrajectoryBase
 {
 public:
+  /**
+   * @brief Build a vector trajectory from finite, uniquely timed P/PV/PVA waypoints.
+   *
+   * Each adjacent pair is joined by the lowest-degree polynomial that satisfies the supplied
+   * endpoint constraints. At internal waypoints, continuity is C0 at P, C1 at PV, and C2 at PVA.
+   * @throws std::invalid_argument for malformed waypoints or a non-positive dof.
+   * @throws std::runtime_error when a segment cannot be represented or solved accurately.
+   */
   explicit VectorSpline(const std::vector<VectorStateConstraint> & constraints, int dof);
   ~VectorSpline() override = default;
 
-  /** @brief Get position vector at specified time. */
-  Eigen::VectorXd getPosition(double time) override;
+  /**
+   * @brief Get position, holding the nearest endpoint outside the trajectory interval.
+   * @throws std::invalid_argument if time is not finite.
+   */
+  Eigen::VectorXd getPosition(double time) const override;
 
-  /** @brief Get velocity vector at specified time. */
-  Eigen::VectorXd getVelocity(double time) override;
+  /**
+   * @brief Get velocity, returning zero outside the trajectory interval.
+   *
+   * At an internal P-only waypoint, the following segment defines the returned velocity.
+   * @throws std::invalid_argument if time is not finite.
+   */
+  Eigen::VectorXd getVelocity(double time) const override;
+
+  /**
+   * @brief Get acceleration, returning zero outside the trajectory interval.
+   *
+   * At an internal waypoint without acceleration, the following segment defines the result.
+   * @throws std::invalid_argument if time is not finite.
+   */
+  Eigen::VectorXd getAcceleration(double time) const override;
 
 private:
-  static std::map<double, std::map<int, Eigen::VectorXd>> constraintsToMap(
-    const std::vector<VectorStateConstraint> & constraints);
+  static std::vector<VectorStateConstraint> validateAndSortConstraints(
+    const std::vector<VectorStateConstraint> & constraints, int dof);
 
-  static Eigen::MatrixXd solveSplineCoefficients(
-    const std::map<double, std::map<int, Eigen::VectorXd>> & constraints_map, int dof);
+  static Eigen::MatrixXd solveSegmentCoefficients(
+    const VectorStateConstraint & start, const VectorStateConstraint & end, double duration,
+    int dof);
+
+  std::size_t segmentIndex(double time) const;
+  Eigen::VectorXd evaluateSegment(std::size_t segment, double time, int derivative_order) const;
 
   const int kDof_;  // Degree of freedom for trajectory (number of order)
-  Eigen::MatrixXd coefficients_;  // Spline coefficients
+  std::vector<double> knot_times_;
+  std::vector<Eigen::MatrixXd> segment_coefficients_;  // Coefficients in normalized local time.
+  double start_time_;
+  double end_time_;
+  Eigen::VectorXd start_position_;
+  Eigen::VectorXd end_position_;
+  Eigen::VectorXd single_point_velocity_;
+  Eigen::VectorXd single_point_acceleration_;
 };
 
 /**
@@ -58,21 +93,62 @@ private:
 class TRAJ_GEN_PUBLIC OrientationSpline : public OrientationTrajectoryBase
 {
 public:
+  /**
+   * @brief Build an orientation trajectory from finite, uniquely timed Q/QV/QVA
+   * waypoints.
+   *
+   * Input quaternions must be non-zero and are normalized internally. Each
+   * adjacent pair uses the principal (shortest-arc) relative rotation and q(t)
+   * = Exp(phi(t)) * q_i. Angular velocity and acceleration constraints use the
+   * spatial/world frame, i.e. q_dot = 0.5 * [0, omega] * q.
+   * @throws std::invalid_argument for malformed waypoints.
+   * @throws std::runtime_error when a segment cannot be represented or solved
+   * accurately.
+   */
   explicit OrientationSpline(const std::vector<AngularStateConstraint> & constraints);
   ~OrientationSpline() override = default;
 
-  /** @brief Get orientation (quaternion) at specified time. */
-  Eigen::Quaterniond getOrientation(double time) override;
+  /**
+   * @brief Get orientation, holding the nearest endpoint outside the trajectory interval.
+   * @throws std::invalid_argument if time is not finite.
+   */
+  Eigen::Quaterniond getOrientation(double time) const override;
 
-  /** @brief Get angular velocity vector at specified time. */
-  Eigen::Vector3d getAngularVelocity(double time) override;
+  /**
+   * @brief Get spatial/world-frame angular velocity, returning zero outside the interval.
+   *
+   * At an internal orientation-only waypoint, the following segment defines the result.
+   * @throws std::invalid_argument if time is not finite.
+   */
+  Eigen::Vector3d getAngularVelocity(double time) const override;
+
+  /**
+   * @brief Get spatial/world-frame angular acceleration, returning zero outside the interval.
+   *
+   * At an internal waypoint without angular acceleration, the following segment defines the
+   * result.
+   * @throws std::invalid_argument if time is not finite.
+   */
+  Eigen::Vector3d getAngularAcceleration(double time) const override;
 
 private:
-  static std::vector<VectorStateConstraint> buildVectorConstraints(
+  static std::vector<AngularStateConstraint> validateAndSortConstraints(
     const std::vector<AngularStateConstraint> & constraints);
 
-  VectorSpline vector_spline_;  // Use VectorSpline internally to interpolate rotation vectors.
+  static std::vector<VectorStateConstraint> buildVectorConstraints(
+    const AngularStateConstraint & start, const AngularStateConstraint & end);
+
+  std::size_t segmentIndex(double time) const;
+
+  std::vector<double> knot_times_;
+  std::vector<Eigen::Quaterniond> knot_orientations_;
+  std::vector<VectorSpline> segment_splines_;
   Eigen::Quaterniond start_orientation_;  // Reference starting orientation
+  Eigen::Quaterniond end_orientation_;
+  double start_time_;
+  double end_time_;
+  Eigen::Vector3d single_point_angular_velocity_;
+  Eigen::Vector3d single_point_angular_acceleration_;
 };
 
 }  // namespace traj_gen

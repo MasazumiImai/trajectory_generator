@@ -27,9 +27,14 @@ class TRAJ_GEN_PUBLIC VectorTrajectoryBase
 public:
   virtual ~VectorTrajectoryBase() = default;
 
-  virtual Eigen::VectorXd getPosition(double time) = 0;
+  /** @brief Evaluate position at a finite time. */
+  virtual Eigen::VectorXd getPosition(double time) const = 0;
 
-  virtual Eigen::VectorXd getVelocity(double time) = 0;
+  /** @brief Evaluate velocity at a finite time. */
+  virtual Eigen::VectorXd getVelocity(double time) const = 0;
+
+  /** @brief Evaluate acceleration at a finite time. */
+  virtual Eigen::VectorXd getAcceleration(double time) const = 0;
 };
 
 class TRAJ_GEN_PUBLIC OrientationTrajectoryBase
@@ -37,9 +42,14 @@ class TRAJ_GEN_PUBLIC OrientationTrajectoryBase
 public:
   virtual ~OrientationTrajectoryBase() = default;
 
-  virtual Eigen::Quaterniond getOrientation(double time) = 0;
+  /** @brief Evaluate orientation at a finite time. */
+  virtual Eigen::Quaterniond getOrientation(double time) const = 0;
 
-  virtual Eigen::Vector3d getAngularVelocity(double time) = 0;
+  /** @brief Evaluate spatial/world-frame angular velocity at a finite time. */
+  virtual Eigen::Vector3d getAngularVelocity(double time) const = 0;
+
+  /** @brief Evaluate spatial/world-frame angular acceleration at a finite time. */
+  virtual Eigen::Vector3d getAngularAcceleration(double time) const = 0;
 };
 
 }  // namespace traj_gen
