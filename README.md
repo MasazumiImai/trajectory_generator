@@ -10,7 +10,7 @@ This package can be used as a standalone C++ library or from a ROS 2 (`colcon`) 
 
 ## Features
 
-* **N-Dimensional Vector Trajectory:** Generate smooth spline trajectories with position, velocity, and acceleration constraints.
+* **N-Dimensional Vector Trajectory:** Generate local piecewise-polynomial trajectories with position, velocity, and acceleration constraints.
 * **SO(3) Orientation Trajectory:** Perform accurate quaternion interpolation in the SO(3) space using Exponential and Logarithmic maps.
 * **ROS 2 Ready:** Fully compatible with the ROS 2 build system (`colcon`).
 
@@ -22,9 +22,15 @@ This package can be used as a standalone C++ library or from a ROS 2 (`colcon`) 
   normalized internally; angular acceleration requires angular velocity at the same waypoint.
 * Waypoint times and state values must be finite, times must be unique, and vector dimensions
   must match the configured degrees of freedom.
+* Each adjacent waypoint pair is interpolated independently in normalized local time with the
+  lowest-degree polynomial that satisfies its endpoint constraints. Position is always continuous;
+  at internal waypoints, velocity and acceleration continuity is guaranteed only when those
+  derivatives are specified. Missing derivatives are not guessed or treated as zero. At an internal
+  waypoint without velocity, an exact-time query uses the following segment's velocity.
 * Queries outside the trajectory interval hold the nearest endpoint position or orientation and
   return zero velocity.
-* Numerically rank-deficient or inaccurate constraint systems are rejected with an exception.
+* Segments whose duration, constraints, coefficients, or evaluation cannot be represented safely
+  in `double` are rejected with an exception.
 
 ## Installation & Build
 

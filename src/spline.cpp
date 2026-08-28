@@ -44,17 +44,103 @@ Eigen::Quaterniond normalizedQuaternion(const Eigen::Quaterniond & quaternion)
   return Eigen::Quaterniond(scaled / scaled.norm());
 }
 
+int derivativeCount(const VectorStateConstraint & constraint)
+{
+  if (constraint.acceleration) {
+    return 3;
+  }
+  return constraint.velocity ? 2 : 1;
+}
+
+const Eigen::VectorXd & derivativeValue(
+  const VectorStateConstraint & constraint, int derivative_order)
+{
+  if (derivative_order == 0) {
+    return *constraint.position;
+  }
+  if (derivative_order == 1) {
+    return *constraint.velocity;
+  }
+  return *constraint.acceleration;
+}
+
+double derivativeFactor(int power, int derivative_order)
+{
+  double factor = 1.0;
+  for (int i = 0; i < derivative_order; ++i) {
+    factor *= power - i;
+  }
+  return factor;
+}
+
+Eigen::VectorXd scaleTimeDerivative(
+  const Eigen::VectorXd & value, double duration, int derivative_order)
+{
+  Eigen::VectorXd scaled = value;
+  for (int order = 0; order < derivative_order; ++order) {
+    const Eigen::VectorXd previous = scaled;
+    scaled *= duration;
+    if (!scaled.allFinite()) {
+      throw std::runtime_error("Segment derivative scaling produced a non-finite value.");
+    }
+    for (Eigen::Index i = 0; i < scaled.size(); ++i) {
+      if (previous(i) != 0.0 && scaled(i) == 0.0) {
+        throw std::runtime_error("Segment derivative scaling underflowed.");
+      }
+    }
+  }
+  return scaled;
+}
+
+Eigen::VectorXd evaluateNormalizedPolynomial(
+  const Eigen::MatrixXd & coefficients, double u, int derivative_order)
+{
+  Eigen::VectorXd value = Eigen::VectorXd::Zero(coefficients.cols());
+  for (int power = coefficients.rows() - 1; power >= derivative_order; --power) {
+    value =
+      value * u + derivativeFactor(power, derivative_order) * coefficients.row(power).transpose();
+  }
+  return value;
+}
+
+Eigen::VectorXd toPhysicalDerivative(Eigen::VectorXd value, double duration, int derivative_order)
+{
+  for (int order = 0; order < derivative_order; ++order) {
+    value /= duration;
+  }
+  if (!value.allFinite()) {
+    throw std::runtime_error("Segment derivative cannot be represented in physical time.");
+  }
+  return value;
+}
+
 }  // namespace
 
 VectorSpline::VectorSpline(const std::vector<VectorStateConstraint> & constraints, int dof)
 : kDof_(dof)
 {
-  auto map = constraintsToMap(constraints, kDof_);
-  start_time_ = map.begin()->first;
-  end_time_ = map.rbegin()->first;
-  start_position_ = map.begin()->second.at(0);
-  end_position_ = map.rbegin()->second.at(0);
-  coefficients_ = solveSplineCoefficients(map, kDof_);
+  const auto sorted_constraints = validateAndSortConstraints(constraints, kDof_);
+  start_time_ = sorted_constraints.front().time;
+  end_time_ = sorted_constraints.back().time;
+  start_position_ = *sorted_constraints.front().position;
+  end_position_ = *sorted_constraints.back().position;
+  single_point_velocity_ =
+    sorted_constraints.front().velocity.value_or(Eigen::VectorXd::Zero(kDof_));
+
+  knot_times_.reserve(sorted_constraints.size());
+  for (const auto & constraint : sorted_constraints) {
+    knot_times_.push_back(constraint.time);
+  }
+
+  segment_coefficients_.reserve(sorted_constraints.size() - 1);
+  for (std::size_t i = 0; i + 1 < sorted_constraints.size(); ++i) {
+    const double duration = sorted_constraints[i + 1].time - sorted_constraints[i].time;
+    if (!std::isfinite(duration) || duration <= 0.0 || !std::isfinite(1.0 / duration)) {
+      throw std::runtime_error("Segment duration cannot be represented safely.");
+    }
+    segment_coefficients_.push_back(
+      solveSegmentCoefficients(sorted_constraints[i], sorted_constraints[i + 1], duration, kDof_));
+  }
 }
 
 Eigen::VectorXd VectorSpline::getPosition(double time)
@@ -66,19 +152,10 @@ Eigen::VectorXd VectorSpline::getPosition(double time)
   if (time > end_time_) {
     return end_position_;
   }
-
-  Eigen::VectorXd position(kDof_);
-  for (int i = 0; i < kDof_; ++i) {
-    double pos_i = 0.0;
-    for (int j = 0; j < coefficients_.rows(); ++j) {
-      pos_i += coefficients_(j, i) * std::pow(time, j);
-    }
-    position(i) = pos_i;
+  if (segment_coefficients_.empty()) {
+    return start_position_;
   }
-  if (!position.allFinite()) {
-    throw std::runtime_error("Spline position evaluation produced a non-finite value.");
-  }
-  return position;
+  return evaluateSegment(segmentIndex(time), time, 0);
 }
 
 Eigen::VectorXd VectorSpline::getVelocity(double time)
@@ -87,22 +164,13 @@ Eigen::VectorXd VectorSpline::getVelocity(double time)
   if (time < start_time_ || time > end_time_) {
     return Eigen::VectorXd::Zero(kDof_);
   }
-
-  Eigen::VectorXd velocity(kDof_);
-  for (int i = 0; i < kDof_; ++i) {
-    double vel_i = 0.0;
-    for (int j = 1; j < coefficients_.rows(); ++j) {
-      vel_i += coefficients_(j, i) * j * std::pow(time, j - 1);
-    }
-    velocity(i) = vel_i;
+  if (segment_coefficients_.empty()) {
+    return single_point_velocity_;
   }
-  if (!velocity.allFinite()) {
-    throw std::runtime_error("Spline velocity evaluation produced a non-finite value.");
-  }
-  return velocity;
+  return evaluateSegment(segmentIndex(time), time, 1);
 }
 
-std::map<double, std::map<int, Eigen::VectorXd>> VectorSpline::constraintsToMap(
+std::vector<VectorStateConstraint> VectorSpline::validateAndSortConstraints(
   const std::vector<VectorStateConstraint> & constraints, int dof)
 {
   if (dof <= 0) {
@@ -121,7 +189,8 @@ std::map<double, std::map<int, Eigen::VectorXd>> VectorSpline::constraintsToMap(
     }
   };
 
-  std::map<double, std::map<int, Eigen::VectorXd>> constraints_map;
+  std::vector<VectorStateConstraint> sorted_constraints;
+  sorted_constraints.reserve(constraints.size());
   for (const auto & constraint : constraints) {
     if (!std::isfinite(constraint.time)) {
       throw std::invalid_argument("Waypoint time must be finite.");
@@ -141,71 +210,124 @@ std::map<double, std::map<int, Eigen::VectorXd>> VectorSpline::constraintsToMap(
       validate_value(*constraint.acceleration);
     }
 
-    auto [waypoint, inserted] = constraints_map.try_emplace(constraint.time);
-    if (!inserted) {
+    sorted_constraints.push_back(constraint);
+  }
+
+  std::sort(
+    sorted_constraints.begin(), sorted_constraints.end(),
+    [](const auto & lhs, const auto & rhs) { return lhs.time < rhs.time; });
+  for (std::size_t i = 1; i < sorted_constraints.size(); ++i) {
+    if (sorted_constraints[i - 1].time == sorted_constraints[i].time) {
       throw std::invalid_argument("Waypoint times must be unique.");
     }
-    waypoint->second.emplace(0, *constraint.position);
-    if (constraint.velocity) {
-      waypoint->second.emplace(1, *constraint.velocity);
-    }
-    if (constraint.acceleration) {
-      waypoint->second.emplace(2, *constraint.acceleration);
-    }
   }
-  return constraints_map;
+  return sorted_constraints;
 }
 
-Eigen::MatrixXd VectorSpline::solveSplineCoefficients(
-  const std::map<double, std::map<int, Eigen::VectorXd>> & constraints_map, int dof)
+Eigen::MatrixXd VectorSpline::solveSegmentCoefficients(
+  const VectorStateConstraint & start, const VectorStateConstraint & end, double duration, int dof)
 {
-  int num_constraints = 0;
-  for (const auto & [time, state_map] : constraints_map) {
-    num_constraints += state_map.size();
+  const int start_constraints = derivativeCount(start);
+  const int end_constraints = derivativeCount(end);
+  const int num_constraints = start_constraints + end_constraints;
+
+  Eigen::MatrixXd coefficients = Eigen::MatrixXd::Zero(num_constraints, dof);
+  for (int derivative_order = 0; derivative_order < start_constraints; ++derivative_order) {
+    coefficients.row(derivative_order) =
+      (scaleTimeDerivative(derivativeValue(start, derivative_order), duration, derivative_order) /
+       derivativeFactor(derivative_order, derivative_order))
+        .transpose();
   }
 
-  // Basis matrix
-  Eigen::MatrixXd T = Eigen::MatrixXd::Zero(num_constraints, num_constraints);
-  // Spline value vector
-  Eigen::MatrixXd X = Eigen::MatrixXd::Zero(num_constraints, dof);
-
-  int row = 0;
-  for (const auto & [time, state_map] : constraints_map) {
-    for (const auto & [derivative_order, value] : state_map) {
-      X.row(row) = value.transpose();
-      for (int col = 0; col < num_constraints; ++col) {
-        if (derivative_order == 0) {  // position
-          T(row, col) = std::pow(time, col);
-        } else if (derivative_order == 1) {  // velocity
-          if (col >= 1) T(row, col) = col * std::pow(time, col - 1);
-        } else if (derivative_order == 2) {  // acceleration
-          if (col >= 2) T(row, col) = col * (col - 1) * std::pow(time, col - 2);
-        }
+  Eigen::MatrixXd end_basis = Eigen::MatrixXd::Zero(end_constraints, end_constraints);
+  Eigen::MatrixXd end_values = Eigen::MatrixXd::Zero(end_constraints, dof);
+  for (int derivative_order = 0; derivative_order < end_constraints; ++derivative_order) {
+    end_values.row(derivative_order) =
+      scaleTimeDerivative(derivativeValue(end, derivative_order), duration, derivative_order)
+        .transpose();
+    for (int power = derivative_order; power < start_constraints; ++power) {
+      end_values.row(derivative_order) -=
+        derivativeFactor(power, derivative_order) * coefficients.row(power);
+    }
+    for (int column = 0; column < end_constraints; ++column) {
+      const int power = start_constraints + column;
+      if (power >= derivative_order) {
+        end_basis(derivative_order, column) = derivativeFactor(power, derivative_order);
       }
-      ++row;
     }
   }
-  if (!T.allFinite()) {
-    throw std::runtime_error("Spline basis matrix contains non-finite values.");
+  if (!end_values.allFinite()) {
+    throw std::runtime_error("Segment endpoint reduction produced non-finite values.");
   }
 
-  Eigen::ColPivHouseholderQR<Eigen::MatrixXd> decomposition(T);
-  if (decomposition.rank() != num_constraints) {
-    throw std::runtime_error("Spline constraints are numerically rank deficient.");
+  Eigen::ColPivHouseholderQR<Eigen::MatrixXd> decomposition(end_basis);
+  if (decomposition.rank() != end_constraints) {
+    throw std::runtime_error("Segment constraints are numerically rank deficient.");
   }
 
-  const Eigen::MatrixXd coefficients = decomposition.solve(X);  // coeffs = T^-1 * X
+  const Eigen::MatrixXd remaining_coefficients = decomposition.solve(end_values);
+  coefficients.bottomRows(end_constraints) = remaining_coefficients;
   if (!coefficients.allFinite()) {
-    throw std::runtime_error("Spline coefficient solve produced non-finite values.");
+    throw std::runtime_error("Segment coefficient solve produced non-finite values.");
   }
 
-  const Eigen::MatrixXd residual = T * coefficients - X;
-  constexpr double kResidualTolerance = 1e-9;
-  const Eigen::ArrayXXd allowed_residual = kResidualTolerance * (1.0 + X.array().abs());
-  if (!residual.allFinite() || (residual.array().abs() > allowed_residual).any()) {
-    throw std::runtime_error("Spline constraints could not be satisfied accurately.");
+  const Eigen::MatrixXd residual = end_basis * remaining_coefficients - end_values;
+  const Eigen::ArrayXXd relative_residual =
+    residual.array().abs() / (1.0 + end_values.array().abs());
+  constexpr double kResidualTolerance = 1e-10;
+  if (!relative_residual.allFinite() || (relative_residual > kResidualTolerance).any()) {
+    throw std::runtime_error("Segment constraints could not be satisfied accurately.");
   }
-  return coefficients;  // num_constraints x dof
+
+  const auto verify_endpoint = [&](const VectorStateConstraint & constraint, double u) {
+    const int count = derivativeCount(constraint);
+    for (int derivative_order = 0; derivative_order < count; ++derivative_order) {
+      const Eigen::VectorXd actual = toPhysicalDerivative(
+        evaluateNormalizedPolynomial(coefficients, u, derivative_order), duration,
+        derivative_order);
+      const Eigen::VectorXd & expected = derivativeValue(constraint, derivative_order);
+      const Eigen::ArrayXd relative_error =
+        (actual - expected).array().abs() / (1.0 + expected.array().abs());
+      if (!relative_error.allFinite() || (relative_error > kResidualTolerance).any()) {
+        throw std::runtime_error("Segment endpoint constraints could not be reproduced.");
+      }
+    }
+  };
+  verify_endpoint(start, 0.0);
+  verify_endpoint(end, 1.0);
+
+  // This coefficient-wise bound may reject cancellation-heavy but finite segments.
+  // Replace it with interval range analysis if those inputs must be supported.
+  for (int derivative_order = 0; derivative_order <= 2; ++derivative_order) {
+    Eigen::VectorXd bound = Eigen::VectorXd::Zero(dof);
+    for (int power = derivative_order; power < coefficients.rows(); ++power) {
+      Eigen::VectorXd term =
+        derivativeFactor(power, derivative_order) * coefficients.row(power).transpose();
+      term = toPhysicalDerivative(term.cwiseAbs(), duration, derivative_order);
+      bound += term;
+      if (!bound.allFinite()) {
+        throw std::runtime_error("Segment evaluation may overflow.");
+      }
+    }
+  }
+  return coefficients;
+}
+
+std::size_t VectorSpline::segmentIndex(double time) const
+{
+  const auto upper = std::upper_bound(knot_times_.begin(), knot_times_.end(), time);
+  const std::size_t knot = static_cast<std::size_t>(upper - knot_times_.begin());
+  return std::min(knot - 1, segment_coefficients_.size() - 1);
+}
+
+Eigen::VectorXd VectorSpline::evaluateSegment(
+  std::size_t segment, double time, int derivative_order) const
+{
+  const double duration = knot_times_[segment + 1] - knot_times_[segment];
+  const double u = (time - knot_times_[segment]) / duration;
+  return toPhysicalDerivative(
+    evaluateNormalizedPolynomial(segment_coefficients_[segment], u, derivative_order), duration,
+    derivative_order);
 }
 
 OrientationSpline::OrientationSpline(const std::vector<AngularStateConstraint> & constraints)

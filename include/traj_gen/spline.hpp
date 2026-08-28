@@ -16,7 +16,7 @@
 #define TRAJ_GEN__SPLINE_HPP_
 
 #include <Eigen/Dense>
-#include <map>
+#include <cstddef>
 #include <vector>
 
 #include "traj_gen/base.hpp"
@@ -34,8 +34,11 @@ class TRAJ_GEN_PUBLIC VectorSpline : public VectorTrajectoryBase
 public:
   /**
    * @brief Build a vector trajectory from finite, uniquely timed P/PV/PVA waypoints.
+   *
+   * Each adjacent pair is joined by the lowest-degree polynomial that satisfies the supplied
+   * endpoint constraints. At internal waypoints, continuity is C0 at P, C1 at PV, and C2 at PVA.
    * @throws std::invalid_argument for malformed waypoints or a non-positive dof.
-   * @throws std::runtime_error when the constraints cannot be solved accurately.
+   * @throws std::runtime_error when a segment cannot be represented or solved accurately.
    */
   explicit VectorSpline(const std::vector<VectorStateConstraint> & constraints, int dof);
   ~VectorSpline() override = default;
@@ -43,22 +46,32 @@ public:
   /** @brief Get position, holding the nearest endpoint outside the trajectory interval. */
   Eigen::VectorXd getPosition(double time) override;
 
-  /** @brief Get velocity, returning zero outside the trajectory interval. */
+  /**
+   * @brief Get velocity, returning zero outside the trajectory interval.
+   *
+   * At an internal P-only waypoint, the following segment defines the returned velocity.
+   */
   Eigen::VectorXd getVelocity(double time) override;
 
 private:
-  static std::map<double, std::map<int, Eigen::VectorXd>> constraintsToMap(
+  static std::vector<VectorStateConstraint> validateAndSortConstraints(
     const std::vector<VectorStateConstraint> & constraints, int dof);
 
-  static Eigen::MatrixXd solveSplineCoefficients(
-    const std::map<double, std::map<int, Eigen::VectorXd>> & constraints_map, int dof);
+  static Eigen::MatrixXd solveSegmentCoefficients(
+    const VectorStateConstraint & start, const VectorStateConstraint & end, double duration,
+    int dof);
+
+  std::size_t segmentIndex(double time) const;
+  Eigen::VectorXd evaluateSegment(std::size_t segment, double time, int derivative_order) const;
 
   const int kDof_;  // Degree of freedom for trajectory (number of order)
-  Eigen::MatrixXd coefficients_;  // Spline coefficients
+  std::vector<double> knot_times_;
+  std::vector<Eigen::MatrixXd> segment_coefficients_;  // Coefficients in normalized local time.
   double start_time_;
   double end_time_;
   Eigen::VectorXd start_position_;
   Eigen::VectorXd end_position_;
+  Eigen::VectorXd single_point_velocity_;
 };
 
 /**
@@ -72,7 +85,7 @@ public:
    *
    * Input quaternions must be non-zero and are normalized internally.
    * @throws std::invalid_argument for malformed waypoints.
-   * @throws std::runtime_error when the constraints cannot be solved accurately.
+   * @throws std::runtime_error when a segment cannot be represented or solved accurately.
    */
   explicit OrientationSpline(const std::vector<AngularStateConstraint> & constraints);
   ~OrientationSpline() override = default;

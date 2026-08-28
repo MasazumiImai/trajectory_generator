@@ -17,6 +17,7 @@
 #include <iomanip>
 #include <iostream>
 #include <limits>
+#include <string>
 
 #include "traj_gen/spline.hpp"
 
@@ -193,6 +194,46 @@ TEST(TrajectoryGenerator, OrientationSpline)
   }
 }
 
+TEST(TrajectoryGenerator, OrientationSplineIsInvariantToAbsoluteTimeOffset)
+{
+  constexpr double base_time = 1073741824.0;  // 2^30
+  std::vector<AngularStateConstraint> local;
+  std::vector<AngularStateConstraint> shifted;
+  for (int i = 0; i <= 2; ++i) {
+    const Eigen::Quaterniond orientation(
+      Eigen::AngleAxisd(i * kPi / 4.0, Eigen::Vector3d::UnitZ()));
+    local.push_back(orientationWaypoint(i, orientation));
+    shifted.push_back(orientationWaypoint(base_time + i, orientation));
+  }
+
+  OrientationSpline local_spline(local);
+  OrientationSpline shifted_spline(shifted);
+  for (double offset : {0.0, 0.25, 1.0, 1.75, 2.0}) {
+    const Eigen::Quaterniond expected(
+      Eigen::AngleAxisd(offset * kPi / 4.0, Eigen::Vector3d::UnitZ()));
+    const Eigen::Quaterniond local_orientation = local_spline.getOrientation(offset);
+    const Eigen::Quaterniond shifted_orientation =
+      shifted_spline.getOrientation(base_time + offset);
+    EXPECT_NEAR(std::abs(expected.dot(local_orientation)), 1.0, 1e-12);
+    EXPECT_NEAR(std::abs(local_orientation.dot(shifted_orientation)), 1.0, 1e-12);
+    EXPECT_TRUE(local_spline.getAngularVelocity(offset).isApprox(
+      Eigen::Vector3d(0.0, 0.0, kPi / 4.0), 1e-12));
+    EXPECT_TRUE(local_spline.getAngularVelocity(offset).isApprox(
+      shifted_spline.getAngularVelocity(base_time + offset), 1e-12));
+  }
+
+  AngularStateConstraint single = orientationWaypoint(base_time, Eigen::Quaterniond::Identity());
+  single.angular_velocity = Eigen::Vector3d(1.0, 2.0, 3.0);
+  OrientationSpline single_point({single});
+  EXPECT_TRUE(
+    single_point.getOrientation(base_time - 1.0).isApprox(Eigen::Quaterniond::Identity()));
+  EXPECT_TRUE(
+    single_point.getOrientation(base_time + 1.0).isApprox(Eigen::Quaterniond::Identity()));
+  EXPECT_EQ(single_point.getAngularVelocity(base_time), *single.angular_velocity);
+  EXPECT_TRUE(single_point.getAngularVelocity(base_time - 1.0).isZero());
+  EXPECT_TRUE(single_point.getAngularVelocity(base_time + 1.0).isZero());
+}
+
 TEST(TrajectoryGenerator, VectorSplineRejectsInvalidWaypoints)
 {
   const VectorStateConstraint valid = scalarWaypoint(0.0, 0.0);
@@ -224,7 +265,7 @@ TEST(TrajectoryGenerator, VectorSplineRejectsInvalidWaypoints)
   EXPECT_THROW((VectorSpline({valid, duplicate}, 1)), std::invalid_argument);
 }
 
-TEST(TrajectoryGenerator, VectorSplineRejectsNumericallyUnsafeConstraints)
+TEST(TrajectoryGenerator, VectorSplineUsesLocalTimeAndRejectsUnsafeDurations)
 {
   const VectorStateConstraint start = scalarWaypoint(0.0, 0.0);
   const VectorStateConstraint indistinguishable =
@@ -235,7 +276,177 @@ TEST(TrajectoryGenerator, VectorSplineRejectsNumericallyUnsafeConstraints)
   absolute_start.velocity = Eigen::VectorXd::Zero(1);
   VectorStateConstraint absolute_end = scalarWaypoint(1e9 + 1.0, 1.0);
   absolute_end.velocity = Eigen::VectorXd::Zero(1);
-  EXPECT_THROW((VectorSpline({absolute_start, absolute_end}, 1)), std::runtime_error);
+  VectorSpline absolute_spline({absolute_start, absolute_end}, 1);
+  EXPECT_NEAR(absolute_spline.getPosition(1e9)(0), 0.0, 1e-12);
+  EXPECT_NEAR(absolute_spline.getPosition(1e9 + 0.5)(0), 0.5, 1e-12);
+  EXPECT_NEAR(absolute_spline.getVelocity(1e9 + 0.5)(0), 1.5, 1e-12);
+  EXPECT_NEAR(absolute_spline.getPosition(1e9 + 1.0)(0), 1.0, 1e-12);
+
+  for (const double duration : {std::ldexp(1.0, -30), std::ldexp(1.0, 30)}) {
+    VectorSpline scaled(
+      {scalarWaypoint(0.0, 1.0), scalarWaypoint(duration, 1.0 + 2.0 * duration)}, 1);
+    EXPECT_NEAR(scaled.getPosition(duration / 2.0)(0), 1.0 + duration, 1e-10);
+    EXPECT_NEAR(scaled.getVelocity(duration / 2.0)(0), 2.0, 1e-12);
+  }
+
+  const VectorStateConstraint earliest = scalarWaypoint(-std::numeric_limits<double>::max(), 0.0);
+  const VectorStateConstraint latest = scalarWaypoint(std::numeric_limits<double>::max(), 1.0);
+  EXPECT_THROW((VectorSpline({earliest, latest}, 1)), std::runtime_error);
+}
+
+TEST(TrajectoryGenerator, VectorSplineSupportsEveryEndpointConstraintCombination)
+{
+  constexpr double start_time = 4.0;
+  constexpr double duration = 2.0;
+  for (int start_order = 0; start_order <= 2; ++start_order) {
+    for (int end_order = 0; end_order <= 2; ++end_order) {
+      SCOPED_TRACE(
+        "start order " + std::to_string(start_order) + ", end order " + std::to_string(end_order));
+      VectorStateConstraint start = scalarWaypoint(start_time, 1.0);
+      VectorStateConstraint end = scalarWaypoint(start_time + duration, 3.0);
+      if (start_order >= 1) {
+        start.velocity = Eigen::VectorXd::Constant(1, 0.25);
+      }
+      if (end_order >= 1) {
+        end.velocity = Eigen::VectorXd::Constant(1, -0.5);
+      }
+      if (start_order >= 2) {
+        start.acceleration = Eigen::VectorXd::Constant(1, 0.75);
+      }
+      if (end_order >= 2) {
+        end.acceleration = Eigen::VectorXd::Constant(1, -1.0);
+      }
+
+      VectorSpline spline({end, start}, 1);
+      EXPECT_NEAR(spline.getPosition(start.time)(0), 1.0, 1e-10);
+      EXPECT_NEAR(spline.getPosition(end.time)(0), 3.0, 1e-10);
+      if (start.velocity) {
+        EXPECT_NEAR(spline.getVelocity(start.time)(0), 0.25, 1e-10);
+      }
+      if (end.velocity) {
+        EXPECT_NEAR(spline.getVelocity(end.time)(0), -0.5, 1e-10);
+      }
+      constexpr double delta = 1e-6;
+      if (start.acceleration) {
+        const double actual =
+          (spline.getVelocity(start.time + delta)(0) - spline.getVelocity(start.time)(0)) / delta;
+        EXPECT_NEAR(actual, 0.75, 1e-4);
+      }
+      if (end.acceleration) {
+        const double actual =
+          (spline.getVelocity(end.time)(0) - spline.getVelocity(end.time - delta)(0)) / delta;
+        EXPECT_NEAR(actual, -1.0, 1e-4);
+      }
+    }
+  }
+
+  VectorStateConstraint p = scalarWaypoint(0.0, 0.0);
+  VectorStateConstraint pv = scalarWaypoint(1.0, 1.0);
+  pv.velocity = Eigen::VectorXd::Constant(1, 0.5);
+  VectorStateConstraint pva = scalarWaypoint(3.0, 2.0);
+  pva.velocity = Eigen::VectorXd::Constant(1, -0.25);
+  pva.acceleration = Eigen::VectorXd::Constant(1, 0.2);
+  VectorStateConstraint final_p = scalarWaypoint(4.0, 3.0);
+  VectorSpline mixed_chain({pva, p, final_p, pv}, 1);
+  EXPECT_NEAR(mixed_chain.getPosition(pv.time)(0), 1.0, 1e-10);
+  EXPECT_NEAR(mixed_chain.getVelocity(pv.time)(0), 0.5, 1e-10);
+  EXPECT_NEAR(mixed_chain.getPosition(pva.time)(0), 2.0, 1e-10);
+  EXPECT_NEAR(mixed_chain.getVelocity(pva.time)(0), -0.25, 1e-10);
+  EXPECT_TRUE(std::isfinite(mixed_chain.getPosition(0.5)(0)));
+  EXPECT_TRUE(std::isfinite(mixed_chain.getPosition(2.0)(0)));
+  EXPECT_TRUE(std::isfinite(mixed_chain.getPosition(3.5)(0)));
+
+  VectorSpline linear({scalarWaypoint(2.0, 5.0), scalarWaypoint(0.0, 1.0)}, 1);
+  EXPECT_NEAR(linear.getPosition(1.0)(0), 3.0, 1e-12);
+  EXPECT_NEAR(linear.getVelocity(1.0)(0), 2.0, 1e-12);
+
+  VectorStateConstraint smooth_start = scalarWaypoint(0.0, 0.0);
+  smooth_start.velocity = Eigen::VectorXd::Zero(1);
+  VectorStateConstraint smooth_end = scalarWaypoint(2.0, 1.0);
+  smooth_end.velocity = Eigen::VectorXd::Zero(1);
+  VectorSpline cubic({smooth_start, smooth_end}, 1);
+  EXPECT_NEAR(cubic.getPosition(1.0)(0), 0.5, 1e-12);
+  EXPECT_NEAR(cubic.getVelocity(1.0)(0), 0.75, 1e-12);
+
+  VectorStateConstraint curved_start = scalarWaypoint(10.0, 0.0);
+  curved_start.velocity = Eigen::VectorXd::Zero(1);
+  curved_start.acceleration = Eigen::VectorXd::Constant(1, 0.5);
+  VectorStateConstraint curved_end = scalarWaypoint(12.0, 0.0);
+  curved_end.velocity = Eigen::VectorXd::Zero(1);
+  curved_end.acceleration = Eigen::VectorXd::Constant(1, 0.5);
+  VectorSpline quintic({curved_start, curved_end}, 1);
+  EXPECT_NEAR(quintic.getPosition(10.5)(0), 0.03515625, 1e-12);
+  EXPECT_NEAR(quintic.getVelocity(10.5)(0), 0.09375, 1e-12);
+  EXPECT_NEAR(quintic.getPosition(11.0)(0), 0.0625, 1e-12);
+  EXPECT_NEAR(quintic.getVelocity(11.0)(0), 0.0, 1e-12);
+}
+
+TEST(TrajectoryGenerator, VectorSplineIsPiecewiseAndScalesToManyWaypoints)
+{
+  std::vector<VectorStateConstraint> waypoints;
+  constexpr int waypoint_count = 1000;
+  constexpr double base_time = 1073741824.0;  // 2^30
+  constexpr double step = 0.25;
+  waypoints.reserve(waypoint_count);
+  for (int i = waypoint_count - 1; i >= 0; --i) {
+    const double offset = i * step;
+    waypoints.push_back(scalarWaypoint(base_time + offset, 2.0 * offset + 1.0));
+  }
+
+  VectorSpline spline(waypoints, 1);
+  for (int i = 0; i < waypoint_count; i += 137) {
+    const double offset = i * step;
+    EXPECT_NEAR(spline.getPosition(base_time + offset)(0), 2.0 * offset + 1.0, 1e-10);
+  }
+  EXPECT_NEAR(spline.getPosition(base_time + 100.125)(0), 201.25, 1e-10);
+  EXPECT_NEAR(spline.getVelocity(base_time + 100.125)(0), 2.0, 1e-12);
+
+  VectorSpline first(
+    {scalarWaypoint(0.0, 0.0), scalarWaypoint(1.0, 1.0), scalarWaypoint(2.0, 2.0)}, 1);
+  VectorSpline changed_far_segment(
+    {scalarWaypoint(0.0, 0.0), scalarWaypoint(1.0, 1.0), scalarWaypoint(2.0, 1000.0)}, 1);
+  EXPECT_DOUBLE_EQ(first.getPosition(0.5)(0), changed_far_segment.getPosition(0.5)(0));
+  EXPECT_DOUBLE_EQ(first.getVelocity(0.5)(0), changed_far_segment.getVelocity(0.5)(0));
+}
+
+TEST(TrajectoryGenerator, VectorSplineDefinesKnotContinuityAndSinglePointBehavior)
+{
+  VectorSpline position_only(
+    {scalarWaypoint(0.0, 0.0), scalarWaypoint(1.0, 1.0), scalarWaypoint(2.0, 3.0)}, 1);
+  EXPECT_NEAR(position_only.getVelocity(1.0 - 1e-6)(0), 1.0, 1e-12);
+  EXPECT_NEAR(position_only.getVelocity(1.0)(0), 2.0, 1e-12);
+  EXPECT_NEAR(position_only.getVelocity(1.0 + 1e-6)(0), 2.0, 1e-12);
+
+  VectorStateConstraint left = scalarWaypoint(0.0, 0.0);
+  left.velocity = Eigen::VectorXd::Zero(1);
+  left.acceleration = Eigen::VectorXd::Zero(1);
+  VectorStateConstraint knot = scalarWaypoint(1.0, 0.0);
+  knot.velocity = Eigen::VectorXd::Zero(1);
+  knot.acceleration = Eigen::VectorXd::Constant(1, 2.0);
+  VectorStateConstraint right = scalarWaypoint(2.0, 0.0);
+  right.velocity = Eigen::VectorXd::Zero(1);
+  right.acceleration = Eigen::VectorXd::Zero(1);
+  VectorSpline twice_continuous({right, left, knot}, 1);
+  constexpr double epsilon = 1e-5;
+  const double acceleration_from_left =
+    (twice_continuous.getVelocity(1.0)(0) - twice_continuous.getVelocity(1.0 - epsilon)(0)) /
+    epsilon;
+  const double acceleration_from_right =
+    (twice_continuous.getVelocity(1.0 + epsilon)(0) - twice_continuous.getVelocity(1.0)(0)) /
+    epsilon;
+  EXPECT_NEAR(acceleration_from_left, 2.0, 2e-4);
+  EXPECT_NEAR(acceleration_from_right, 2.0, 2e-4);
+
+  VectorStateConstraint single = scalarWaypoint(5.0, 7.0);
+  single.velocity = Eigen::VectorXd::Constant(1, 3.0);
+  single.acceleration = Eigen::VectorXd::Constant(1, -2.0);
+  VectorSpline single_point({single}, 1);
+  EXPECT_DOUBLE_EQ(single_point.getPosition(-100.0)(0), 7.0);
+  EXPECT_DOUBLE_EQ(single_point.getPosition(5.0)(0), 7.0);
+  EXPECT_DOUBLE_EQ(single_point.getPosition(100.0)(0), 7.0);
+  EXPECT_DOUBLE_EQ(single_point.getVelocity(5.0)(0), 3.0);
+  EXPECT_DOUBLE_EQ(single_point.getVelocity(5.0 - 1e-12)(0), 0.0);
+  EXPECT_DOUBLE_EQ(single_point.getVelocity(5.0 + 1e-12)(0), 0.0);
 }
 
 TEST(TrajectoryGenerator, VectorSplineHoldsEndpointsAndRejectsInvalidQueries)
@@ -250,8 +461,8 @@ TEST(TrajectoryGenerator, VectorSplineHoldsEndpointsAndRejectsInvalidQueries)
   EXPECT_DOUBLE_EQ(spline.getPosition(2.0)(0), 3.0);
   EXPECT_DOUBLE_EQ(spline.getVelocity(-1.0)(0), 0.0);
   EXPECT_DOUBLE_EQ(spline.getVelocity(2.0)(0), 0.0);
-  EXPECT_DOUBLE_EQ(spline.getVelocity(0.0)(0), 2.0);
-  EXPECT_DOUBLE_EQ(spline.getVelocity(1.0)(0), -2.0);
+  EXPECT_NEAR(spline.getVelocity(0.0)(0), 2.0, 1e-12);
+  EXPECT_NEAR(spline.getVelocity(1.0)(0), -2.0, 1e-12);
 
   EXPECT_THROW(spline.getPosition(std::numeric_limits<double>::quiet_NaN()), std::invalid_argument);
   EXPECT_THROW(spline.getVelocity(std::numeric_limits<double>::infinity()), std::invalid_argument);
